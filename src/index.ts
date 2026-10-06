@@ -21,7 +21,9 @@ function tryListen(port: number, attemptsLeft: number): void {
   httpServer.once("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
       if (attemptsLeft <= 1) {
-        console.error(`Could not find a free port after ${MAX_PORT_ATTEMPTS} attempts starting from ${config.port}.`);
+        console.error(
+          `Could not find a free port after ${MAX_PORT_ATTEMPTS} attempts starting from ${config.port}.`
+        );
         process.exit(1);
       }
       console.warn(`Port ${port} is in use, trying ${port + 1}...`);

@@ -98,7 +98,10 @@ function queueDir(): string {
 
 export function daemonAlive(maxAgeMs = 5000): boolean {
   try {
-    const ping = JSON.parse(readFileSync(daemonPingPath(), "utf8")) as { ts?: number; status?: string };
+    const ping = JSON.parse(readFileSync(daemonPingPath(), "utf8")) as {
+      ts?: number;
+      status?: string;
+    };
     // a "stopped" ping may be fresh (written on graceful exit) but the daemon is gone
     return (
       typeof ping.ts === "number" &&
@@ -198,7 +201,8 @@ export async function runBridgeTask(task: BridgeTask): Promise<BridgeResult> {
         throw new Error(
           `Warm daemon accepted the task but did not answer (${(err as Error).message}). ` +
             "It may be stuck on a long build; wait and retry, or stop it with " +
-            "'python bridge_client.py stop' and retry (cold fallback)."
+            "'python bridge_client.py stop' and retry (cold fallback).",
+          { cause: err }
         );
       }
     }

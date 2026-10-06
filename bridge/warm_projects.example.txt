@@ -1,0 +1,10 @@
+# Projects pre-opened by bridge_daemon.py at startup (one path per line).
+# Copy this file to warm_projects.txt and put your own absolute paths here.
+# Env var CB_WARM_PROJECTS (";" separated) overrides this file when set.
+# A leading '*' opens the project as PRIMARY (required for set_code writes).
+# The starred project MUST be listed first: only one project can be primary,
+# and the first warm-up open wins the slot.
+#
+# Example:
+# *D:\Projects\MyMachine\MyMachine.project
+# D:\Libs\MyLib.library

@@ -9,8 +9,13 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BRIDGE = os.path.dirname(HERE)
-PROJ = r"D:\KimiData\kimi\Workspaces\CoDeSyS\Project\Project_One\Project_one.project"
-APP = "MX308_CE/Plc Logic/Application"
+# Test project path: set CODESYS_TEST_PROJECT (absolute path to a scratch
+# .project you can mutate freely). All created objects are ZZT_* and are
+# deleted at the end.
+PROJ = os.environ.get("CODESYS_TEST_PROJECT", "")
+if not PROJ:
+    sys.exit("Set CODESYS_TEST_PROJECT to an absolute path of a scratch .project")
+APP = os.environ.get("CODESYS_TEST_APPLICATION", "MX308_CE/Plc Logic/Application")
 TMP = HERE
 EXP = os.path.join(TMP, "zzt_exp.xml")
 XSD = os.path.join(TMP, "zzt_sym.xsd")

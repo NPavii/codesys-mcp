@@ -1136,6 +1136,13 @@ def _find_lib_manager(proj, args):
         except Exception:
             pass
     if app is None:
+        # .library files have no active application: search the whole tree
+        for c in _walk_all(proj):
+            try:
+                if "library" in c.get_name().lower() and "manager" in c.get_name().lower():
+                    return c
+            except Exception:
+                pass
         raise Exception("No active application; pass args.application")
     lm = app.find("Library Manager", recursive=False)
     if lm is not None and not hasattr(lm, "get_name"):
@@ -1263,6 +1270,22 @@ def op_add_file(args, state):
             "container": args.get("path", "<project root>")}
 
 
+def _safe_msg(m):
+    """Make a compiler message string JSON/ascii-safe (ScriptEngine py2 json
+    crashes on .NET strings that are not valid utf-8 py-str)."""
+    s = str(m)
+    try:
+        s.decode('utf-8')
+        return s
+    except Exception:
+        pass
+    try:
+        return s.decode('utf-16-le').encode('utf-8')
+    except Exception:
+        pass
+    return ''.join([c if ord(c) < 128 else '?' for c in s])
+
+
 def op_build(args, state):
     """Compile the application and return build messages.
     app.build() requires the PRIMARY project; a warm secondary is promoted
@@ -1288,7 +1311,7 @@ def op_build(args, state):
     msgs = []
     try:
         for m in system.get_messages("97f48d64-a2a3-4856-b640-75c046e37ea9"):
-            msgs.append(str(m))
+            msgs.append(_safe_msg(m))
     except Exception:
         pass
     build_ok, warn_count = _parse_build_summary(msgs)

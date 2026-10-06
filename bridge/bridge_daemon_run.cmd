@@ -1,2 +1,0 @@
-@echo off
-"" --noUI --profile="CODESYS V3.5 SP21 Patch 1" --runscript="D:\KimiData\kimi\Workspaces\CoDeSyS\CodeSYS-MCP\bridge\bridge_daemon.py"

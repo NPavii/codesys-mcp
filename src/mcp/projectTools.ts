@@ -10,7 +10,9 @@ const projectPathSchema = z
 const objectPathSchema = z
   .string()
   .min(1)
-  .describe("Object path inside the project tree, e.g. 'MyFolder/FB_Motor'. Use the POU/folder names as shown in the CODESYS tree.");
+  .describe(
+    "Object path inside the project tree, e.g. 'MyFolder/FB_Motor'. Use the POU/folder names as shown in the CODESYS tree."
+  );
 
 function asTextResult(value: Record<string, unknown>) {
   return {
@@ -75,16 +77,8 @@ export function registerProjectTools(server: McpServer): void {
         path: objectPathSchema
           .optional()
           .describe("Optional sub-path to list from. Omit to list from the project root."),
-        recursive: z
-          .boolean()
-          .optional()
-          .describe("Recurse into sub-folders. Defaults to true."),
-        max_depth: z
-          .number()
-          .int()
-          .min(1)
-          .optional()
-          .describe("Optional maximum recursion depth."),
+        recursive: z.boolean().optional().describe("Recurse into sub-folders. Defaults to true."),
+        max_depth: z.number().int().min(1).optional().describe("Optional maximum recursion depth."),
         slim: z
           .boolean()
           .optional()
@@ -157,7 +151,7 @@ export function registerProjectTools(server: McpServer): void {
           .string()
           .optional()
           .describe(
-            "Full ST declaration text including the header line, e.g. \"FUNCTION_BLOCK FB_Motor\\nVAR_INPUT\\n...\\nEND_VAR\"."
+            'Full ST declaration text including the header line, e.g. "FUNCTION_BLOCK FB_Motor\\nVAR_INPUT\\n...\\nEND_VAR".'
           ),
         implementation: z
           .string()
@@ -165,7 +159,17 @@ export function registerProjectTools(server: McpServer): void {
           .describe("ST implementation body text (statements only, no header).")
       }
     },
-    async ({ project, name, pou_type, folder, return_type, base_type, interfaces, declaration, implementation }) =>
+    async ({
+      project,
+      name,
+      pou_type,
+      folder,
+      return_type,
+      base_type,
+      interfaces,
+      declaration,
+      implementation
+    }) =>
       runTask("create_pou", {
         project,
         name,
@@ -259,23 +263,64 @@ export function registerProjectTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "codesys_create_interface",
+    {
+      title: "Create CODESYS Interface",
+      description:
+        "Create an empty INTERFACE. IMPORTANT (verified on CODESYS V3.5 SP21): never pass a declaration " +
+        "with METHOD/PROPERTY signatures - full-text interface declarations do not parse and can corrupt " +
+        "the object. Create the interface empty, then add members one by one with codesys_create_member " +
+        "on the interface object. " +
+        BRIDGE_NOTE,
+      inputSchema: {
+        project: projectPathSchema,
+        name: z.string().min(1).describe("Name of the new interface, e.g. 'I_Motor'."),
+        folder: objectPathSchema.optional()
+      }
+    },
+    async ({ project, name, folder }) =>
+      runTask("create_interface", {
+        project,
+        name,
+        ...(folder !== undefined ? { folder } : {})
+      })
+  );
+
+  server.registerTool(
     "codesys_set_code",
     {
       title: "Set CODESYS Object Code",
       description:
         "Replace the declaration or implementation text of an existing object with new ST text. " +
+        "WARNING: never use this on the declaration of an INTERFACE (even to add a comment) - it " +
+        "corrupts the object ('interface definition not found' on build). Interface members are " +
+        "child objects; edit them individually. " +
         BRIDGE_NOTE,
       inputSchema: {
         project: projectPathSchema,
         path: objectPathSchema,
-        part: z
-          .enum(["declaration", "implementation"])
-          .describe("Which text part to replace."),
+        part: z.enum(["declaration", "implementation"]).describe("Which text part to replace."),
         text: z.string().describe("New full text for the selected part.")
       }
     },
-    async ({ project, path, part, text }) =>
-      runTask("set_code", { project, path, part, text })
+    async ({ project, path, part, text }) => runTask("set_code", { project, path, part, text })
+  );
+
+  server.registerTool(
+    "codesys_close_project",
+    {
+      title: "Close CODESYS Project",
+      description:
+        "Close the project in the warm session and release the file lock so the CODESYS GUI can open " +
+        "it. Use before handing the project back to manual GUI work. " +
+        BRIDGE_NOTE,
+      inputSchema: {
+        project: projectPathSchema,
+        save: z.boolean().optional().describe("Save before closing. Defaults to false.")
+      }
+    },
+    async ({ project, save }) =>
+      runTask("close_project", { project, ...(save !== undefined ? { save } : {}) })
   );
 
   server.registerTool(

@@ -10,6 +10,23 @@ npm-debug.log*
 docs/pdfs/*.pdf
 .claude/
 .mcp.json
+
+# --- bridge runtime artifacts (local machine state, never commit) ---
+bridge/queue/
+bridge/snapshots/
+bridge/__pycache__/
+bridge/tests/__pycache__/
+bridge/*.log
+bridge/daemon_ping.json
+bridge/task.json
+bridge/result.json
+bridge/bridge_daemon_run.cmd
+bridge/warm_projects.txt
+bridge/_*.json
+bridge/_*.py
+bridge/img*.png
+bridge/tests/task.json
+bridge/tests/zzt_*
 *.key
 *.pem
 *.p12
@@ -17,10 +34,3 @@ docs/pdfs/*.pdf
 *.crt
 *.secret
 *.secrets
-
-# bridge runtime artifacts
-bridge/queue/
-bridge/snapshots/
-bridge/*.log
-bridge/daemon_ping.json
-bridge/warm_projects.txt

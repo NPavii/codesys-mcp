@@ -20,7 +20,9 @@ const testConfig: AppConfig = {
   officialLookupEnabled: false,
   officialLookupTimeoutMs: 100,
   officialLookupCacheTtlMs: 1000,
-  pdfSearchEnabled: true,
+  // Keep the base config hermetic: real PDFs in docs/pdfs are gitignored and
+  // parsing them here would make topic/search tests slow and flaky.
+  pdfSearchEnabled: false,
   pdfDocsDir: "docs/pdfs",
   pdfMaxTextChars: 200000
 };
@@ -82,6 +84,7 @@ describe("CODESYS knowledge search", () => {
     const pdfPath = path.join(pdfDir, "codesys-local-manual.pdf");
     const config = {
       ...testConfig,
+      pdfSearchEnabled: true,
       pdfDocsDir: pdfDir
     };
 

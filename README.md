@@ -20,10 +20,11 @@ Project automation bridge (works directly on `.project` files via the CODESYS Sc
 - `codesys_project_open` / `codesys_project_info`: open a project headlessly and inspect basic info.
 - `codesys_list_objects` / `codesys_get_object`: list the project tree and read declaration/implementation ST text of any POU, DUT, GVL, or action.
 - `codesys_create_pou`: create a PROGRAM / FUNCTION_BLOCK / FUNCTION with optional ST declaration and implementation text.
-- `codesys_create_member`: add an action, method, or property to an existing POU.
+- `codesys_create_member`: add an action, method, or property to an existing POU or interface.
+- `codesys_create_interface`: create an empty INTERFACE (members are added with `codesys_create_member`).
 - `codesys_create_dut` / `codesys_create_gvl`: create data unit types and global variable lists.
-- `codesys_set_code`: replace the declaration or implementation text of an existing object.
-- `codesys_save_project`: save the project.
+- `codesys_set_code`: replace the declaration or implementation text of an existing object (never on an interface declaration - see limitations below).
+- `codesys_save_project` / `codesys_close_project`: save the project; close it in the warm session and release the file lock for the GUI.
 
 ### v0.3.0 — project lifecycle and device toolchain (ported from [Codesys-MCP-SP21-plus](https://github.com/phobicdotno/Codesys-MCP-SP21-plus), MIT)
 
@@ -41,6 +42,9 @@ Project automation bridge (works directly on `.project` files via the CODESYS Sc
 #### Known SP21 Patch 1 limitations (verified empirically)
 
 - Text writes (`codesys_set_code`, create-with-text) require the project to be the **primary** project in the ScriptEngine session. The bridge promotes/demotes automatically; the warm daemon marks the working project primary via `*` in `bridge/warm_projects.txt`.
+- **Interfaces**: create them empty (`codesys_create_interface`) and add members with `codesys_create_member`. Full-text interface declarations with METHOD/PROPERTY signatures do not parse, and `codesys_set_code` on an interface declaration (even a comment) corrupts the object ("interface definition not found" on build). Interface members are child objects; edit them individually.
+- **Batch limits**: do not put `build`/`clean_all` steps inside `codesys_batch` (`app.build()` needs the primary project and fails inside a batch) - call `codesys_build` standalone. Do not put `close_project` inside a batch either: it closes the batch's own project handle and breaks the remaining steps.
+- **Build verdicts**: trust the compiler summary line ("0 errors"), not the raw return value of `app.build()` (always None). Incremental builds can hide errors - after changing the type of a PERSISTENT variable or an interface method, run `codesys_clean_all` and rebuild. Never change the type of an existing PERSISTENT variable; add new variables instead.
 - `remove_pou` in `codesys_configure_task` is **not supported**: `pous.remove()` is a silent no-op and task objects cannot be deleted via the API. The op returns an honest error; remove POU calls in the CODESYS GUI.
 - Deleting task-tree objects (tasks, Task Configuration) is not possible via the API at all.
 - `delete_object` works for objects created in the current warm session; objects loaded from disk may refuse removal (ScriptEngine `remove()` throws NullReference).
