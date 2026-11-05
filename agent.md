@@ -172,6 +172,8 @@ Online (need a running PLC runtime and gateway): `codesys_online_login` / `codes
 
 OPC UA / NVL: `codesys_symbol_config_create`, `codesys_symbol_config_list`, `codesys_symbol_config_set_access`, `codesys_symbol_config_settings_get` / `_set`, `codesys_symbol_config_export_xsd`, `codesys_nvl_sender_set`, `codesys_nvl_receiver_create`.
 
+Cross-reference / refactoring / simulation: `codesys_find_references` (project-wide identifier search over all textual code; every hit carries its qualifier so same-named variables can be told apart), `codesys_rename_symbol` (renames an identifier project-wide AND the object of that name, rewriting the declaration header that `codesys_rename_object` misses; dry_run first - it refuses reserved words and existing names), `codesys_monitor_variables` (sample online variables over a time window: first/last/min/max/changes), `codesys_set_simulation_mode` (run the application in CODESYS's built-in simulator instead of the PLC - test without hardware), `codesys_list_device_repository` (installed device descriptions, filtered).
+
 ---
 
 ## Operating Rules for Project Automation (read before calling bridge tools)
@@ -186,6 +188,7 @@ These are verified on CODESYS V3.5 SP21 Patch 1. Ignoring them wastes hours.
 6. **Build verdicts**: trust the compiler summary ("0 errors") in the returned messages, not raw return values. Incremental builds hide errors — after touching PERSISTENT variable types or interface methods, run `codesys_clean_all` + rebuild. Never change the type of an existing PERSISTENT variable (the "incompatible persistent list" error is unrecoverable via file deletion); add new variables instead.
 7. **Destructive ops** (`codesys_delete_object`, `codesys_snapshot_restore`, `codesys_plc_file_delete`, force/reset-origin) require explicit user approval and `confirm: true`. Take a `codesys_snapshot` before risky edits.
 8. **Errors are honest**: when the ScriptEngine cannot do something on SP21 (remove POU from a task, delete task objects, offline boot application, compiler version read), the tool returns an explicit error — do not retry-loop, fall back to the GUI.
+9. **Renames**: for a symbol (variable, POU, DUT, GVL) prefer `codesys_rename_symbol` over `codesys_rename_object` — it rewrites the declaration header and all textual references in one pass, and it refuses when the new name would clash. Always `dry_run` first and inspect `changes`; then build to catch references from libraries the lexer cannot see. Graphical bodies (FBD/LD/CFC/SFC) are NOT rewritten — the tool lists them as `not_searched_graphical`; rename inside those in the GUI.
 
 ---
 

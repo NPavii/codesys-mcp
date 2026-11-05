@@ -3685,6 +3685,498 @@ def op_nvl_receiver_create(args, state):
             "sender_guid": str(getattr(check, "SenderGVLGuid", "")),
             "sender_name": str(getattr(check, "SenderGVLName", "")),
             "task": str(getattr(check, "TaskName", ""))}
+# ---------------------------------------------------------------------------
+# Cross-reference / refactoring / simulation tools.
+# Ported from Codesys-MCP-Master (MIT, (c) phobicdotno): the scripting API
+# has no cross-reference or refactoring call, so these read the text of every
+# textual object with a small ST lexer. Verified live on SP21 there; py2
+# (IronPython 2.7) compatible here.
+# ---------------------------------------------------------------------------
+
+_ST_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+# Elementary types that prefix typed literals (T#1s, DINT#5, BOOL#1).
+_ST_LITERAL_TYPES = set("""T TIME LTIME D DATE LDATE TOD TIME_OF_DAY LTOD DT DATE_AND_TIME LDT BOOL BYTE WORD
+DWORD LWORD SINT INT DINT LINT USINT UINT UDINT ULINT REAL LREAL STRING WSTRING CHAR WCHAR""".split())
+
+
+def st_identifier_spans(text):
+    """(start, end) of every identifier token outside comments, strings,
+    pragmas and typed-literal values."""
+    spans = []
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        two = text[i:i + 2]
+        if two == "(*" or two == "/*":
+            closer = "*)" if two == "(*" else "*/"
+            depth = 1
+            i += 2
+            while i < n and depth:
+                if text[i:i + 2] == two:
+                    depth += 1
+                    i += 2
+                elif text[i:i + 2] == closer:
+                    depth -= 1
+                    i += 2
+                else:
+                    i += 1
+            continue
+        if two == "//":
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if c == "'" or c == '"':
+            i += 1
+            while i < n:
+                if text[i] == "$":
+                    i += 2
+                    continue
+                if text[i] == c:
+                    i += 1
+                    break
+                i += 1
+            continue
+        if c == "{":
+            j = text.find("}", i)
+            i = n if j < 0 else j + 1
+            continue
+        if c == "#":
+            # the value of a typed literal: T#1s, 16#FF, E_Mode#Run
+            i += 1
+            while i < n and (text[i].isalnum() or text[i] in "_.:"):
+                i += 1
+            continue
+        m = _ST_IDENT.match(text, i)
+        if m:
+            # The type prefix of a typed literal (T#1s, DINT#5, TOD#12:00) is
+            # not a name; an enum type before '#' (E_Mode#Run) is.
+            if m.end() < n and text[m.end()] == "#" and m.group(0).upper() in _ST_LITERAL_TYPES:
+                i = m.end()
+                continue
+            spans.append((m.start(), m.end()))
+            i = m.end()
+            continue
+        if c.isdigit():
+            # A number: digits, '_', one '.' followed by a digit (not the '..'
+            # of an array range: ARRAY[1..nMax]), an exponent.
+            i += 1
+            while i < n:
+                ch = text[i]
+                if ch.isdigit() or ch == "_":
+                    i += 1
+                elif ch == "." and i + 1 < n and text[i + 1].isdigit():
+                    i += 1
+                elif ch in "eE" and i + 1 < n and (text[i + 1].isdigit() or
+                                                   (text[i + 1] in "+-" and i + 2 < n and text[i + 2].isdigit())):
+                    i += 2
+                else:
+                    break
+            continue
+        i += 1
+    return spans
+
+
+def _st_qualifier(text, a):
+    """The access path in front of position a: 'fb.out.' in fb.out.x,
+    'arr[i].' in arr[i].x, 'p^.' in p^.x; '' when there is none."""
+    k = a - 1
+    while k >= 0 and text[k] in " \t":
+        k -= 1
+    if k < 0 or text[k] != ".":
+        return ""
+    end = k + 1
+    while k >= 0 and text[k] == ".":
+        k -= 1
+        while k >= 0 and text[k] in " \t":
+            k -= 1
+        # one path element: identifier, optionally followed by [..] and/or ^
+        while k >= 0 and text[k] in "^]":
+            if text[k] == "]":
+                depth = 0
+                while k >= 0:
+                    if text[k] == "]":
+                        depth += 1
+                    elif text[k] == "[":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    k -= 1
+            k -= 1
+        while k >= 0 and (text[k].isalnum() or text[k] == "_"):
+            k -= 1
+    return text[k + 1:end].replace(" ", "").replace("\t", "")
+
+
+def st_find_identifier(text, name):
+    """Matches of identifier `name` (case-insensitive) in `text`:
+    list of dicts with line (1-based), column (1-based), qualifier and the
+    source line."""
+    text = safe_text(text) or ""
+    name = safe_text(name) or ""
+    want = name.lower()
+    lines = text.split("\n")
+    starts = [0]
+    for ln in lines[:-1]:
+        starts.append(starts[-1] + len(ln) + 1)
+    found = []
+    li = 0
+    for (a, b) in st_identifier_spans(text):
+        if text[a:b].lower() != want:
+            continue
+        while li + 1 < len(starts) and starts[li + 1] <= a:
+            li += 1
+        found.append({
+            "line": li + 1,
+            "column": a - starts[li] + 1,
+            "qualifier": _st_qualifier(text, a),
+            "text": lines[li].rstrip("\r"),
+        })
+    return found
+
+
+def st_replace_identifier(text, name, new_name):
+    """`text` with every identifier `name` (case-insensitive) replaced by
+    `new_name`; returns (new_text, count)."""
+    text = safe_text(text) or ""
+    name = safe_text(name) or ""
+    want = name.lower()
+    out = []
+    last = 0
+    count = 0
+    for (a, b) in st_identifier_spans(text):
+        if text[a:b].lower() == want:
+            out.append(text[last:a])
+            out.append(new_name)
+            last = b
+            count += 1
+    out.append(text[last:])
+    return "".join(out), count
+
+
+def st_textual_objects(project):
+    """(path, object, part, document) for every textual declaration and
+    implementation in the project, and the paths of objects whose body is
+    graphical (FBD/LD/CFC/SFC), which these tools cannot read."""
+    docs = []
+    graphical = []
+
+    def walk(obj, prefix):
+        name = obj.get_name() if hasattr(obj, "get_name") else "?"
+        path = "%s/%s" % (prefix, name) if prefix else name
+        for part in ("textual_declaration", "textual_implementation"):
+            if hasattr(obj, part):
+                try:
+                    doc = getattr(obj, part)
+                except Exception:
+                    doc = None
+                if doc is not None and hasattr(doc, "text"):
+                    docs.append((path, obj, part.split("_")[1], doc))
+                elif part == "textual_implementation":
+                    # a POU whose body is FBD/LD/CFC/SFC has no text document
+                    graphical.append(path)
+        try:
+            for ch in obj.get_children(False):
+                walk(ch, path)
+        except Exception:
+            pass
+
+    for ch in project.get_children(False):
+        walk(ch, "")
+    return docs, graphical
+
+
+def op_find_references(args, state):
+    """Every use of an identifier in the project's textual code (declarations
+    and implementations of POUs, methods, properties, actions, DUTs, GVLs,
+    interfaces). Matching is by name, case-insensitive like IEC 61131-3:
+    the qualifier in front of each hit ('PLC_PRG.' in PLC_PRG.bRun) lets the
+    caller judge which variable is meant."""
+    proj = state["proj"]
+    name = safe_text(args["name"]) or ""
+    max_results = int(args.get("max_results", 200))
+    docs, graphical = st_textual_objects(proj)
+    results = []
+    total = 0
+    defined = []
+    for (path, obj, part, doc) in docs:
+        try:
+            text = safe_text(doc.text) or ""
+        except Exception:
+            continue
+        if part == "declaration" and path.split("/")[-1].lower() == name.lower():
+            defined.append(path)
+        for hit in st_find_identifier(text, name):
+            total += 1
+            if len(results) < max_results:
+                hit["object"] = path
+                hit["part"] = part
+                results.append(hit)
+    return {"name": name,
+            "total": total,
+            "shown": len(results),
+            "objects_named_like_it": defined,
+            "references": results,
+            "not_searched_graphical": graphical}
+
+
+def op_rename_symbol(args, state):
+    """Rename an identifier everywhere in the project's textual code, and the
+    object of that name too (a POU, DUT, GVL, method...). A dry run (the
+    default) only reports what would change. Matching is by name
+    (case-insensitive): two different variables with the same name in
+    different POUs are both renamed unless OBJECTS limits it."""
+    old = safe_text(args["old_name"]) or ""
+    new = safe_text(args["new_name"]) or ""
+    dry_run = bool(args.get("dry_run", True))
+    objects = [safe_text(o) or "" for o in (args.get("objects") or [])]
+
+    # Keywords, operators, elementary types and the blocks of the Standard
+    # library: a new name must not collide with any of them. Names from other
+    # libraries are not known here; compile after a rename to catch those.
+    RESERVED = set("""ABS ABSTRACT ACOS ACTION ADD ADR AND ANY ANY_BIT ANY_DATE ANY_DERIVED ANY_ELEMENTARY ANY_INT
+ANY_MAGNITUDE ANY_NUM ANY_REAL ANY_STRING ARRAY ASIN AT ATAN BIT BITADR BOOL BY BYTE CASE CHAR CONSTANT CONTINUE
+COS DATE DATE_AND_TIME DINT DIV DO DT DWORD ELSE ELSIF END_ACTION END_CASE END_FOR END_FUNCTION
+END_FUNCTION_BLOCK END_IF END_INTERFACE END_METHOD END_PROGRAM END_PROPERTY END_REPEAT END_STRUCT END_TYPE
+END_UNION END_VAR END_WHILE EQ EXIT EXP EXPT EXTENDS FALSE FINAL FOR FUNCTION FUNCTION_BLOCK GE GT IF IMPLEMENTS
+INDEXOF INT INTERFACE INTERNAL JMP LDATE LDT LE LIMIT LINT LN LOG LREAL LT LTIME LTOD LWORD MAX METHOD MIN MOD
+MOVE MUL MUX NE NOT OF OR POINTER PRIVATE PROGRAM PROPERTY PROTECTED PUBLIC REAL REF REFERENCE REPEAT RETAIN
+PERSISTENT RETURN ROL ROR SEL SHL SHR SIN SINT SIZEOF SQRT STRING STRUCT SUB SUPER TAN THEN THIS TIME
+TIME_OF_DAY TO TOD TRUE TRUNC TYPE UDINT UINT ULINT UNION UNTIL USINT VAR VAR_CONFIG VAR_EXTERNAL VAR_GLOBAL
+VAR_IN_OUT VAR_INPUT VAR_INST VAR_OUTPUT VAR_STAT VAR_TEMP WCHAR WHILE WORD WSTRING XOR XSIZEOF
+TON TOF TP RTC R_TRIG F_TRIG CTU CTD CTUD SR RS SEMA""".split())
+
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", new) or "__" in new:
+        raise Exception("'%s' is not a valid IEC 61131-3 identifier." % new)
+    if new.upper() in RESERVED:
+        raise Exception("'%s' is a reserved word, an elementary type or a Standard library block." % new)
+    # the same names set_code refuses: time-literal suffixes and S/R
+    if new in ("s", "t", "d", "m", "h", "ms", "us", "ns", "S", "R"):
+        raise Exception("'%s' collides with a time-literal suffix or the S/R flip-flop inputs; pick a longer name." % new)
+    if old.lower() == new.lower():
+        raise Exception("Old and new name are the same (IEC identifiers are case-insensitive).")
+
+    proj = state["proj"]
+    docs, graphical = st_textual_objects(proj)
+
+    def in_scope(path):
+        return not objects or any(path == o or path.startswith(o.rstrip("/") + "/") for o in objects)
+
+    # The new name must not be used anywhere in the project, also outside
+    # the scope: a local named like a global would shadow it.
+    clashes = []
+    for (path, obj, part, doc) in docs:
+        if st_find_identifier(getattr(doc, "text", ""), new) or path.split("/")[-1].lower() == new.lower():
+            clashes.append("%s (%s)" % (path, part))
+    if clashes:
+        raise Exception("'%s' is already used in: %s. Rename refused." % (new, ", ".join(sorted(set(clashes))[:20])))
+
+    # The object carrying the old name (POU, DUT, GVL, method...).
+    named = []
+    seen = set()
+    for (path, obj, part, doc) in docs:
+        if path not in seen and path.split("/")[-1].lower() == old.lower() and hasattr(obj, "rename"):
+            seen.add(path)
+            named.append((path, obj))
+    if objects and any(in_scope(p) for (p, o) in named):
+        outside = sorted(set(path for (path, obj, part, doc) in docs
+                             if not in_scope(path) and st_find_identifier(getattr(doc, "text", ""), old)))
+        if outside:
+            raise Exception("Renaming the object '%s' inside the scope would break its uses outside it: %s. "
+                            "Rename without 'objects', or widen the scope." % (old, ", ".join(outside[:20])))
+
+    changes = []
+    planned = []
+    for (path, obj, part, doc) in docs:
+        if not in_scope(path):
+            continue
+        text = safe_text(doc.text) or ""
+        new_text, n = st_replace_identifier(text, old, new)
+        if n:
+            changes.append({"object": path, "part": part, "count": n})
+            planned.append((doc, text, new_text))
+    renamed_objects = [p for (p, o) in named if in_scope(p)]
+
+    if not dry_run and (planned or renamed_objects):
+        done = []
+        try:
+            for (doc, old_text, new_text) in planned:
+                doc.replace(new_text)  # whole-document replace, as set_code does
+                done.append((doc, old_text))
+            for (p, o) in named:
+                if in_scope(p):
+                    o.rename(new)
+        except Exception:
+            # put the text back so the project is not left half renamed
+            for (doc, old_text) in reversed(done):
+                try:
+                    doc.replace(old_text)
+                except Exception:
+                    pass
+            raise
+        mark_touched(state)
+
+    return {"old": old,
+            "new": new,
+            "dry_run": dry_run,
+            "occurrences": sum(c["count"] for c in changes),
+            "changes": changes,
+            "renamed_objects": renamed_objects,
+            "not_searched_graphical": graphical}
+
+
+def op_monitor_variables(args, state):
+    """Sample variables of the running application over a time window and
+    summarise each one (first, last, min, max, number of changes), optionally
+    with the raw samples. Requires a prior codesys_online_login (the cached
+    session is reused). Waits with system.delay so CODESYS keeps processing
+    messages between samples."""
+    import scriptengine as _se
+    oa = _online_get(args)
+    expressions = [safe_text(e) or "" for e in args["expressions"]]
+    if not expressions:
+        raise Exception("Expressions list empty.")
+    duration_ms = int(args.get("duration_ms", 5000))
+    interval_ms = int(args.get("interval_ms", 200))
+    include_samples = bool(args.get("include_samples", False))
+    max_samples = 10000  # a 600 s window at 60 ms; reported as truncated if hit
+
+    def _num(v):
+        s = str(v).strip()
+        if s.upper() in ("TRUE", "FALSE"):
+            return 1.0 if s.upper() == "TRUE" else 0.0
+        try:
+            return float(s.split("#")[-1])
+        except Exception:
+            return None
+
+    series = dict((e, []) for e in expressions)
+    t0 = time.time()
+    n = 0
+    while n < max_samples:
+        t = time.time() - t0
+        try:
+            values = list(oa.read_values(tuple(expressions)))
+        except Exception:
+            values = []
+            for e in expressions:
+                try:
+                    values.append(oa.read_value(e))
+                except Exception as ex:
+                    values.append("<read failed: %s>" % ex)
+        for i, e in enumerate(expressions):
+            series[e].append((round(t * 1000.0), str(values[i]) if i < len(values) else None))
+        n += 1
+        if (time.time() - t0) * 1000.0 + interval_ms > duration_ms:
+            break
+        _se.system.delay(interval_ms)
+
+    summary = []
+    for e in expressions:
+        s = series[e]
+        vals = [v for (_, v) in s]
+        changes = sum(1 for i in range(1, len(vals)) if vals[i] != vals[i - 1])
+        nums = [x for x in (_num(v) for v in vals) if x is not None]
+        entry = {
+            "expression": e,
+            "samples": len(vals),
+            "first": vals[0] if vals else None,
+            "last": vals[-1] if vals else None,
+            "changes": changes,
+        }
+        if nums and len(nums) == len(vals):
+            entry["min"] = min(nums)
+            entry["max"] = max(nums)
+        if include_samples:
+            entry["series_ms_value"] = s
+        summary.append(entry)
+
+    return {"duration_ms": round((time.time() - t0) * 1000.0),
+            "interval_ms": interval_ms,
+            "samples": n,
+            "truncated": n >= max_samples,
+            "variables": summary}
+
+
+def op_set_simulation_mode(args, state):
+    """Read or set a device's simulation mode: in simulation the application
+    runs in CODESYS's built-in simulator instead of on the PLC, so it can be
+    tested without hardware. Changed offline (log out first); the project is
+    saved after a change."""
+    proj = state["proj"]
+    dev = _find_device(proj, args.get("device_path", ""))
+    enable = args.get("enable", None)  # None = only report
+    name = dev.get_name() if hasattr(dev, "get_name") else "?"
+    if not hasattr(dev, "get_simulation_mode"):
+        raise Exception("This CODESYS version has no simulation-mode scripting call on devices.")
+    before = bool(dev.get_simulation_mode())
+    after = before
+    if enable is not None and bool(enable) != before:
+        # The change is saved; never save other unsaved work along with it.
+        if bool(getattr(proj, "dirty", False)):
+            raise Exception("The project has unsaved changes. Save them (save_project) or discard them first; "
+                            "set_simulation_mode saves the project after the change.")
+        dev.set_simulation_mode(bool(enable))
+        after = bool(dev.get_simulation_mode())
+        if after != bool(enable):
+            raise Exception("Simulation mode did not change (is the application still logged in?).")
+        mark_touched(state)
+    return {"device": name,
+            "simulation_mode": bool(after),
+            "changed": after != before,
+            "was": bool(before)}
+
+
+def op_list_device_repository(args):
+    """The device descriptions installed in the local device repository
+    (shared by every CODESYS install on the PC), filtered. Read-only."""
+    name_contains = args.get("name_contains") or None
+    vendor_contains = args.get("vendor_contains") or None
+    device_type = args.get("device_type")
+    limit = int(args.get("limit", 50))
+
+    def _s(v):
+        try:
+            return "" if v is None else str(v)
+        except Exception:
+            return ""
+
+    all_devs = list(device_repository.get_all_devices())
+    rows = []
+    matched = 0
+    for d in all_devs:
+        info = d.device_info
+        did = d.device_id
+        name = _s(getattr(info, "name", ""))
+        vendor = _s(getattr(info, "vendor", ""))
+        dtype = getattr(did, "type", None)
+        if name_contains and name_contains.lower() not in name.lower():
+            continue
+        if vendor_contains and vendor_contains.lower() not in vendor.lower():
+            continue
+        if device_type is not None:
+            same = False
+            try:
+                same = int(dtype) == int(device_type)
+            except Exception:
+                same = str(dtype) == str(device_type)
+            if not same:
+                continue
+        matched += 1
+        rows.append({
+            "name": name,
+            "vendor": vendor,
+            "type": dtype,
+            "id": _s(getattr(did, "id", "")),
+            "version": _s(getattr(did, "version", "")),
+            "description": _s(getattr(info, "description", ""))[:160],
+        })
+    # sort all matches first, then cut: the shown ones are the first in order
+    rows.sort(key=lambda r: (r["vendor"].lower(), r["name"].lower(), r["version"]))
+    rows = rows[:limit]
+    return {"installed": len(all_devs), "matched": matched, "shown": len(rows), "devices": rows}
+
 OPS = {
     "list_applications": (op_list_applications, True),
     "set_active_application": (op_set_active_application, True),
@@ -3732,6 +4224,11 @@ OPS = {
     "grant_object_access": (op_grant_object_access, True),
     "nvl_sender_set": (op_nvl_sender_set, True),
     "nvl_receiver_create": (op_nvl_receiver_create, True),
+    "find_references": (op_find_references, True),
+    "rename_symbol": (op_rename_symbol, True),
+    "monitor_variables": (op_monitor_variables, True),
+    "set_simulation_mode": (op_set_simulation_mode, True),
+    "list_device_repository": (op_list_device_repository, False),
     "list_open_projects": (op_list_open_projects, False),
     "open_project": (op_open_project, False),
     "create_project": (op_create_project, False),
@@ -3790,6 +4287,7 @@ PRIMARY_OPS = set([
     # wrapper (no-op when the project already holds the primary slot).
     "set_code", "create_pou", "create_gvl", "create_dut",
     "create_member", "create_interface", "batch",
+    "rename_symbol", "set_simulation_mode",
 ])
 
 def _open_project_auto(proj_path):

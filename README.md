@@ -39,6 +39,14 @@ Project automation bridge (works directly on `.project` files via the CODESYS Sc
 - **Symbol configuration (OPC UA)**: `codesys_symbol_config_create`, `codesys_symbol_config_list`, `codesys_symbol_config_set_access`, `codesys_symbol_config_settings_get` / `_set`, `codesys_symbol_config_export_xsd`.
 - **Network variables (NVL)**: `codesys_nvl_sender_set`, `codesys_nvl_receiver_create`.
 
+### v0.3.1 — cross-reference, refactoring and simulation (ported from [Codesys-MCP-Master](https://github.com/phobicdotno/Codesys-MCP-Master), MIT)
+
+- `codesys_find_references`: every use of an identifier in the project's textual code (POUs, methods, properties, actions, DUTs, GVLs, interfaces), with line/column and the qualifier in front of each hit (`PLC_PRG.` in `PLC_PRG.bRun`) - CODESYS's scripting API has no cross-reference call, so this reads every textual object with an ST lexer (comments, strings, pragmas and typed literals are skipped; matching is whole-identifier and case-insensitive like IEC 61131-3). Graphical bodies (FBD/LD/CFC/SFC) are reported as `not_searched_graphical`.
+- `codesys_rename_symbol`: rename an identifier project-wide AND the object of that name, rewriting the declaration header that `codesys_rename_object` leaves stale. Dry run is the default; the call refuses reserved words, time-literal suffixes, and names already used anywhere in the project, rolls back on failure, and can be limited to object paths. Always dry-run first, then build after a real rename (references from libraries are invisible to the lexer).
+- `codesys_monitor_variables`: sample variables of the running application over a time window (first/last/min/max/changes, optional raw samples); reuses the session of `codesys_online_login`.
+- `codesys_set_simulation_mode`: read or set a device's simulation mode - the application then runs in CODESYS's built-in simulator instead of on the PLC (test without hardware). Refuses when the project has unsaved changes.
+- `codesys_list_device_repository`: the device descriptions installed in the local repository, filtered by name/vendor/type.
+
 #### Known SP21 Patch 1 limitations (verified empirically)
 
 - Text writes (`codesys_set_code`, create-with-text) require the project to be the **primary** project in the ScriptEngine session. The bridge promotes/demotes automatically; the warm daemon marks the working project primary via `*` in `bridge/warm_projects.txt`.

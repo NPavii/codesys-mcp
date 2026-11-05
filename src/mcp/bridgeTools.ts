@@ -997,6 +997,130 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       sender_gvl: z.string().optional().describe("Binding to the sender GVL."),
       task: z.string().optional()
     }
+  },
+  // ---------- cross-reference / refactoring / simulation ----------
+  {
+    name: "codesys_find_references",
+    title: "Find Identifier References",
+    description:
+      "Every use of an identifier in the project's textual code (declarations and implementations of " +
+      "POUs, methods, properties, actions, DUTs, GVLs, interfaces). CODESYS has no scripting call for " +
+      "cross-references, so this reads every textual object with an ST lexer: it skips comments, strings, " +
+      "pragmas and typed-literal values, and matches whole identifiers case-insensitively like IEC 61131-3. " +
+      "Each hit carries the qualifier in front of it ('PLC_PRG.' in PLC_PRG.bRun) - use it to judge WHICH " +
+      "variable is meant when several share the name. Graphical bodies (FBD/LD/CFC/SFC) are listed as " +
+      "not_searched_graphical. " + BRIDGE_NOTE,
+    op: "find_references",
+    schema: {
+      project: p,
+      name: z.string().min(1).describe("Identifier to search for, e.g. 'bRun'."),
+      max_results: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Cap on returned references (total count is always exact). Defaults to 200.")
+    }
+  },
+  {
+    name: "codesys_rename_symbol",
+    title: "Rename Symbol Project-wide",
+    description:
+      "Rename an identifier everywhere in the project's textual code AND the object of that name " +
+      "(POU, DUT, GVL, method...). Unlike codesys_rename_object this rewrites the POU declaration header " +
+      "too, and refuses when the new name clashes with a reserved word, an existing identifier (checked " +
+      "project-wide, also outside the scope), or a Standard library block. Two different variables with " +
+      "the same name in different POUs are BOTH renamed (IEC matching is by name) unless 'objects' limits " +
+      "the scope. On failure the already-written texts are rolled back. ALWAYS run with dry_run=true " +
+      "first and inspect 'changes', then repeat with dry_run=false. After a real rename, run codesys_build " +
+      "to catch references from libraries the lexer cannot see. Graphical bodies (FBD/LD/CFC/SFC) are not " +
+      "rewritten - listed as not_searched_graphical. " + BRIDGE_NOTE,
+    op: "rename_symbol",
+    schema: {
+      project: p,
+      old_name: z.string().min(1),
+      new_name: z.string().min(1),
+      dry_run: z
+        .boolean()
+        .optional()
+        .describe("Report what would change without writing. Defaults to true - keep it true on the first call."),
+      objects: z
+        .array(z.string().min(1))
+        .optional()
+        .describe("Object paths limiting the rename (prefix match); default the whole project.")
+    }
+  },
+  {
+    name: "codesys_monitor_variables",
+    title: "Monitor Variables Over Time",
+    description:
+      "Sample variables of the RUNNING application over a time window and summarise each one (first, " +
+      "last, min, max, number of changes), optionally with the raw samples. Requires a prior " +
+      "codesys_online_login (the cached session is reused). All expressions are read in one " +
+      "read_values call per sample; CODESYS keeps processing messages between samples. " + BRIDGE_NOTE,
+    op: "monitor_variables",
+    schema: {
+      project: p,
+      application: appPath,
+      expressions: z
+        .array(z.string().min(1))
+        .min(1)
+        .describe("e.g. ['PRG_Doser.rTarget', 'PRG_Doser.xReady']"),
+      duration_ms: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Total window length. Defaults to 5000."),
+      interval_ms: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Delay between samples. Defaults to 200."),
+      include_samples: z
+        .boolean()
+        .optional()
+        .describe("Include the raw [ms, value] series per variable. Defaults to false.")
+    }
+  },
+  {
+    name: "codesys_set_simulation_mode",
+    title: "Read/Set Device Simulation Mode",
+    description:
+      "Read or set a device's simulation mode: in simulation the application runs in CODESYS's built-in " +
+      "simulator instead of on the PLC - test code without hardware. Log out first (the change is " +
+      "offline); the project is saved after a change, and the call refuses when the project has unsaved " +
+      "changes, so unrelated work is never saved along with the switch. Omit 'enable' to only report the " +
+      "current state. " + BRIDGE_NOTE,
+    op: "set_simulation_mode",
+    schema: {
+      project: p,
+      device_path: obj.optional().describe("Device tree path; default the active application's device."),
+      enable: z
+        .boolean()
+        .optional()
+        .describe("true/false to change the mode; omit to only report the current state.")
+    }
+  },
+  {
+    name: "codesys_list_device_repository",
+    title: "List Device Repository",
+    description:
+      "The device descriptions installed in the local device repository (shared by every CODESYS install " +
+      "on the PC), filtered by name/vendor/type. Read-only; use type/id/version with codesys_add_device. " +
+      BRIDGE_NOTE,
+    op: "list_device_repository",
+    schema: {
+      name_contains: z.string().optional().describe("Case-insensitive name filter."),
+      vendor_contains: z.string().optional().describe("Case-insensitive vendor filter."),
+      device_type: z
+        .number()
+        .int()
+        .optional()
+        .describe("Exact device type id; omit for any."),
+      limit: z.number().int().positive().optional().describe("Max rows after sorting. Defaults to 50.")
+    }
   }
 ];
 export function registerBridgeTools(server: McpServer): void {
