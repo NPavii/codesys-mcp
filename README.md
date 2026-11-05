@@ -58,7 +58,7 @@ Each project tool call writes a task file, starts `CODESYS.exe --noUI --runscrip
 
 - The target project must **not** be open in the CODESYS GUI at the same time (file lock).
 - Each call takes roughly 10–30 s because a headless CODESYS instance starts per call.
-- With the optional warm daemon (`bridge/bridge_daemon.cmd`) the project stays open in a background CODESYS instance and calls take ~1–3 s. The daemon is also what the MCP plugin uses when available.
+- With the optional warm daemon (`bridge/bridge_daemon.cmd`) the project stays open in a background CODESYS instance and calls take ~1–3 s. The daemon is also what the MCP plugin uses when available. The launcher (`bridge/bridge_daemon.ps1`) spawns the daemon and a companion monitor window fully detached via WMI; `CB_MONITOR=0` skips the monitor, `CB_KEEP=1` does not kill existing CODESYS processes first. Machine-specific paths go into `bridge/bridge_daemon.local.ps1` (git-ignored); by default `CODESYS.exe` is resolved from `CODESYS_EXE` or a search under `C:\Program Files\CODESYS`.
 - Configure via env: `CODESYS_EXE`, `CODESYS_PROFILE`, `CODESYS_BRIDGE_DIR`, `CODESYS_BRIDGE_TIMEOUT_MS` (see `.env.example`).
 
 ## What It Does

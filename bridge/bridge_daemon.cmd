@@ -1,2 +1,6 @@
 @echo off
-"D:\CoDeSyS inst\CODESYS\Common\CODESYS.exe" --noUI --profile="CODESYS V3.5 SP21 Patch 1" --runscript="D:\KimiData\kimi\Workspaces\CoDeSyS\CodeSYS-MCP\bridge\bridge_daemon.py"
+rem Warm CODESYS bridge daemon - headless start + companion monitor window.
+rem Environment switches (set before calling):
+rem   CB_MONITOR=0  - no monitor window
+rem   CB_KEEP=1     - do not kill existing CODESYS processes first
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bridge_daemon.ps1"

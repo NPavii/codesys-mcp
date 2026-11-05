@@ -38,6 +38,68 @@ try:
 except OSError:
     pass
 
+
+def json_safe(o):
+    """Recursively normalize strings so the embedded json encoder never sees
+    a narrow byte string it cannot handle.
+
+    ScriptEngine quirks (verified by probes 2026-10-27):
+      * there is NO 'unicode' builtin; narrow and wide strings both report
+        type name 'str' (only repr distinguishes them: u'...' vs '...');
+      * the encoder decodes every narrow str as utf-8 and dies with
+        "UnicodeDecodeError: 'unknown' codec" on legacy cp1251 bytes;
+      * any .decode() returns a wide string, which serializes fine.
+    So: attempt utf-8 then cp1251 on EVERY string; on success return the
+    decoded (wide) value, otherwise pass through. Wide strings either decode
+    idempotently or raise and fall through unchanged."""
+    if isinstance(o, dict):
+        return dict((json_safe(k), json_safe(v)) for k, v in o.items())
+    if isinstance(o, (list, tuple)):
+        return [json_safe(x) for x in o]
+    if isinstance(o, str):
+        # Whatever the flavor (narrow cp1251/utf-8 bytes, or wide), reduce it
+        # to a NARROW utf-8 byte string: the encoder's s.decode('utf-8') then
+        # always succeeds (probe-verified). Wide strings whose .decode raises
+        # just get re-encoded to utf-8 via the last-resort branch.
+        wide = None
+        for enc in ("utf-8", "cp1251"):
+            try:
+                wide = o.decode(enc)
+                break
+            except Exception:
+                pass
+        if wide is None:
+            try:
+                wide = o.decode("utf-8", "replace")
+            except Exception:
+                wide = o
+        try:
+            return wide.encode("utf-8")
+        except Exception:
+            return wide
+    return o
+
+
+def nuclear_safe(o):
+    """Last-resort sanitizer: only JSON-native types survive as-is; strings
+    become their repr (guaranteed ASCII, never crashes the encoder); any
+    other object becomes repr as well. Content may be mangled - this tier
+    only exists so a result file is always written."""
+    try:
+        _long = long
+    except NameError:
+        _long = int
+    if isinstance(o, dict):
+        return dict((nuclear_safe(k), nuclear_safe(v)) for k, v in o.items())
+    if isinstance(o, (list, tuple)):
+        return [nuclear_safe(x) for x in o]
+    if o is None or isinstance(o, (bool, int, _long, float)):
+        return o
+    try:
+        return repr(o)
+    except Exception:
+        return "<unserializable>"
+
 log_boot("boot")
 
 # Suppress bridge.py's own main() and load its definitions into a namespace
@@ -140,11 +202,13 @@ def write_ping(extra=None):
         info.update(extra)
     # plain write (no os.replace: ScriptEngine python may lack it)
     with open(PING_FILE, "w") as f:
-        json.dump(info, f)
+        json.dump(json_safe(info), f)
 
 
 write_ping({"status": "starting"})
 log_boot("loop start")
+
+current_task_path = None
 
 while True:
     try:
@@ -169,6 +233,7 @@ while True:
 
         for name in task_files:
             path = os.path.join(QUEUE_DIR, name)
+            current_task_path = path
             try:
                 with open(path, "r") as f:
                     task = json.load(f)
@@ -191,16 +256,32 @@ while True:
             tasks_done += 1
             last_task_ts = time.time()
             res_path = path[:-5] + ".result.json"
-            with open(res_path, "w") as f:
-                json.dump(result, f)
+            try:
+                with open(res_path, "w") as f:
+                    json.dump(json_safe(result), f)
+            except Exception:
+                # the encoder still choked: fall back to a scrubbed payload
+                # rather than spinning on the same task forever
+                result["_nuclear_fallback"] = True
+                with open(res_path, "w") as f:
+                    json.dump(nuclear_safe(result), f)
             try:
                 os.remove(path)
             except Exception:
                 pass
             write_ping({"status": "ok" if result["ok"] else "error"})
+            current_task_path = None
     except SystemExit:
         break
     except Exception:
+        # park the poisoned task so one bad task cannot spin the loop forever
+        if current_task_path and os.path.exists(current_task_path):
+            try:
+                os.rename(current_task_path,
+                          current_task_path + ".poisoned")
+            except Exception:
+                pass
+        current_task_path = None
         # never die silently: record the crash in ping and keep serving
         try:
             write_ping({"status": "loop_error",

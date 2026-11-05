@@ -44,6 +44,30 @@ def _safe_name(obj):
 # Helpers
 # ---------------------------------------------------------------
 
+def safe_text(s):
+    """Normalize a ScriptEngine string for JSON output.
+
+    textual_declaration/implementation texts can come back as py2 byte
+    strings holding cp1251 bytes (legacy comments) - the daemon's json.dump
+    then dies with UnicodeDecodeError. Try utf-8, fall back to cp1251,
+    then to lossy replacement; pass unicode/None through.
+    """
+    if s is None:
+        return None
+    try:
+        _unicode = unicode  # py2 in ScriptEngine
+    except NameError:
+        _unicode = str     # py3 fallback
+    if isinstance(s, _unicode):
+        return s
+    for enc in ("utf-8", "cp1251"):
+        try:
+            return s.decode(enc)
+        except Exception:
+            pass
+    return s.decode("utf-8", "replace")
+
+
 def obj_info(obj, slim=False):
     try:
         name = obj.get_name()
@@ -266,12 +290,12 @@ def op_get_object(args, state):
     out = obj_info(obj)
     try:
         if hasattr(obj, "has_textual_declaration") and obj.has_textual_declaration:
-            out["declaration"] = obj.textual_declaration.text
+            out["declaration"] = safe_text(obj.textual_declaration.text)
     except Exception as e:
         out["declaration_error"] = str(e)
     try:
         if hasattr(obj, "has_textual_implementation") and obj.has_textual_implementation:
-            out["implementation"] = obj.textual_implementation.text
+            out["implementation"] = safe_text(obj.textual_implementation.text)
     except Exception as e:
         out["implementation_error"] = str(e)
     try:
@@ -292,12 +316,12 @@ def op_dump_tree(args, state):
         out = obj_info(o)
         try:
             if hasattr(o, "has_textual_declaration") and o.has_textual_declaration:
-                out["declaration"] = o.textual_declaration.text
+                out["declaration"] = safe_text(o.textual_declaration.text)
         except Exception as e:
             out["declaration_error"] = str(e)
         try:
             if hasattr(o, "has_textual_implementation") and o.has_textual_implementation:
-                out["implementation"] = o.textual_implementation.text
+                out["implementation"] = safe_text(o.textual_implementation.text)
         except Exception as e:
             out["implementation_error"] = str(e)
         try:

@@ -21,6 +21,7 @@ bridge/daemon_ping.json
 bridge/task.json
 bridge/result.json
 bridge/bridge_daemon_run.cmd
+bridge/bridge_daemon.local.ps1
 bridge/warm_projects.txt
 bridge/_*.json
 bridge/_*.py

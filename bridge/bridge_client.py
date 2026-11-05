@@ -88,9 +88,25 @@ def cmd_submit(args):
     t0 = time.time()
     while time.time() - t0 < args.timeout:
         if os.path.exists(rpath):
-            with open(rpath, "r", encoding="utf-8") as f:
-                print(f.read())
-            os.remove(rpath)
+            # the daemon may still be writing: require a stable, non-zero
+            # size before reading, and tolerate a locked file
+            try:
+                size1 = os.path.getsize(rpath)
+                time.sleep(0.3)
+                size2 = os.path.getsize(rpath)
+            except OSError:
+                continue
+            if size1 == 0 or size1 != size2:
+                continue
+            try:
+                with open(rpath, "r", encoding="utf-8") as f:
+                    print(f.read())
+            except OSError:
+                continue
+            try:
+                os.remove(rpath)
+            except OSError:
+                pass
             return 0
         time.sleep(0.3)
     print("timeout %ss waiting for result" % args.timeout, file=sys.stderr)
