@@ -38,7 +38,7 @@ The server supports local **stdio** integration and an authenticated **Streamabl
 
 ```bash
 git clone https://github.com/NPavii/codesys-mcp.git
-cd codesys-mcp-server
+cd codesys-mcp
 npm install
 npm run build
 ```
