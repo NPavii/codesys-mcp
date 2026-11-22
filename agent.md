@@ -11,7 +11,7 @@ This file is written for **AI agents** that have been instructed to install the 
 1. **CODESYS documentation tools** — CODESYS Development System V3 guidance, Structured Text writing help, searchable local PDF documentation, and live lookup of official CODESYS pages.
 2. **Project automation bridge** (v0.3.0+) — direct work on `.project` / `.library` files through the CODESYS ScriptEngine: read/write POUs, DUTs, GVLs, interfaces, build, library management, devices, tasks, online read/write/force.
 
-Repository: `https://github.com/Zandiexoder/CodeSYS-MCP`
+Repository: `https://github.com/NPavii/codesys-mcp-server`
 
 ---
 
@@ -28,8 +28,8 @@ Repository: `https://github.com/Zandiexoder/CodeSYS-MCP`
 If you do not already have a local copy:
 
 ```bash
-git clone https://github.com/Zandiexoder/CodeSYS-MCP.git
-cd CodeSYS-MCP
+git clone https://github.com/NPavii/codesys-mcp-server.git
+cd codesys-mcp-server
 ```
 
 ---
@@ -69,10 +69,10 @@ Choose **one** of the following methods based on your client.
 ### Claude Code (preferred — stdio transport)
 
 ```bash
-claude mcp add --transport stdio codesys-docs -- node /ABSOLUTE/PATH/TO/CodeSYS-MCP/dist/src/cli.js --stdio
+claude mcp add --transport stdio codesys-docs -- node /ABSOLUTE/PATH/TO/codesys-mcp-server/dist/src/cli.js --stdio
 ```
 
-Replace `/ABSOLUTE/PATH/TO/CodeSYS-MCP` with the real absolute path to the cloned repo. Use `pwd` from inside the repo directory to get it.
+Replace `/ABSOLUTE/PATH/TO/codesys-mcp-server` with the real absolute path to the cloned repo. Use `pwd` from inside the repo directory to get it.
 
 You can also write it directly to `.mcp.json` in your project root:
 
@@ -81,7 +81,7 @@ You can also write it directly to `.mcp.json` in your project root:
   "mcpServers": {
     "codesys-docs": {
       "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/CodeSYS-MCP/dist/src/cli.js", "--stdio"],
+      "args": ["/ABSOLUTE/PATH/TO/codesys-mcp-server/dist/src/cli.js", "--stdio"],
       "env": {
         "OFFICIAL_LOOKUP_ENABLED": "true"
       }
@@ -95,7 +95,7 @@ You can also write it directly to `.mcp.json` in your project root:
 Set `MCP_TOKEN` first, then start the HTTP server:
 
 ```bash
-node /ABSOLUTE/PATH/TO/CodeSYS-MCP/dist/src/index.js
+node /ABSOLUTE/PATH/TO/codesys-mcp-server/dist/src/index.js
 ```
 
 Register `http://localhost:3000/mcp` in the MCP client and configure its `Authorization: Bearer <MCP_TOKEN>` header. Do not use an HTTP registration method that cannot send this header.
@@ -103,7 +103,7 @@ Register `http://localhost:3000/mcp` in the MCP client and configure its `Author
 ### Codex CLI
 
 ```bash
-codex mcp add codesys-docs -- node /ABSOLUTE/PATH/TO/CodeSYS-MCP/dist/src/cli.js --stdio
+codex mcp add codesys-docs -- node /ABSOLUTE/PATH/TO/codesys-mcp-server/dist/src/cli.js --stdio
 ```
 
 ### From npm (no local clone needed)

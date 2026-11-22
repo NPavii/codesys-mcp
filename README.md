@@ -1,235 +1,243 @@
 # CODESYS MCP Server
 
-A Model Context Protocol server for CODESYS Development System V3. It gives MCP clients curated CODESYS guidance, Structured Text writing help, searchable local PDF documentation, and optional live lookup of allowlisted official CODESYS pages.
+A Model Context Protocol server for CODESYS Development System V3. It combines project and PLC automation through the CODESYS ScriptEngine with searchable, curated engineering documentation.
 
-The server can run over HTTP at `/mcp` or over stdio for direct CLI and agent integration. Official pages are summarized and cited rather than copied into the project. Primary official sources include [CODESYS Online Help](https://content.helpme-codesys.com/) and [CODESYS Examples](https://content.helpme-codesys.com/en/CODESYS%20Examples/_ex_start_page.html).
+The server supports local **stdio** integration and an authenticated **Streamable HTTP** endpoint. HTTP is read-only for CODESYS operations by default.
 
-## Tools
+## Highlights
 
-- `search_codesys_docs`: search curated and/or official CODESYS guidance.
-- `get_codesys_topic`: explain a known topic such as POUs, function blocks, timers, tasks, variables, libraries, debugging, or Structured Text.
-- `codesys_writing_guidance`: provide practical CODESYS and Structured Text design guidance for a requested task.
-- `list_codesys_pdfs`: list PDF documents available in the configured PDF folder.
-- `search_codesys_pdfs`: search text extracted from local PDF documents.
-- `get_codesys_pdf`: return extracted text from a specific local PDF document.
-- `get_codesys_page`: fetch the full text content of any allowlisted CODESYS documentation URL.
-- `crawl_codesys_help`: crawl and index the CODESYS help site for searchable documentation.
+- Create and inspect POUs, interfaces, DUTs, GVLs, methods, properties and actions.
+- Edit Structured Text, build applications and manage project libraries.
+- Work with devices, tasks, PLCopenXML, symbol configuration and network variable lists.
+- Read, write, force and monitor online values; manage the application lifecycle where explicitly enabled.
+- Search curated CODESYS guidance, local PDF manuals and allowlisted official documentation.
+- Use snapshots, dry runs and project-wide reference analysis before risky changes.
+- Run a warm CODESYS daemon for low-latency operations or an isolated cold process per call.
 
-Project automation bridge (works directly on `.project` files via the CODESYS ScriptEngine):
+## Requirements
 
-- `codesys_project_open` / `codesys_project_info`: open a project headlessly and inspect basic info.
-- `codesys_list_objects` / `codesys_get_object`: list the project tree and read declaration/implementation ST text of any POU, DUT, GVL, or action.
-- `codesys_create_pou`: create a PROGRAM / FUNCTION_BLOCK / FUNCTION with optional ST declaration and implementation text.
-- `codesys_create_member`: add an action, method, or property to an existing POU or interface.
-- `codesys_create_interface`: create an empty INTERFACE (members are added with `codesys_create_member`).
-- `codesys_create_dut` / `codesys_create_gvl`: create data unit types and global variable lists.
-- `codesys_set_code`: replace the declaration or implementation text of an existing object (never on an interface declaration - see limitations below).
-- `codesys_save_project` / `codesys_close_project`: save the project; close it in the warm session and release the file lock for the GUI.
+- Node.js 20 or newer.
+- npm.
+- Windows and CODESYS Development System V3 with ScriptEngine for project or PLC automation.
+- Documentation tools do not require a CODESYS installation.
 
-### v0.3.0 — project lifecycle and device toolchain (ported from [Codesys-MCP-SP21-plus](https://github.com/phobicdotno/Codesys-MCP-SP21-plus), MIT)
-
-- **Multi-application**: `codesys_list_applications`, `codesys_set_active_application`, `codesys_create_project`, `codesys_list_open_projects`.
-- **Object tree**: `codesys_rename_object`, `codesys_move_object`, `codesys_dump_pou_code` (bulk-read all ST code in one call), `codesys_set_exclude_from_build`, `codesys_signature_crc`, `codesys_grant_object_access`.
-- **PLCopenXML exchange**: `codesys_export_plcopen_xml`, `codesys_import_plcopen_xml`.
-- **Task configuration**: `codesys_list_tasks`, `codesys_configure_task` (create/reconfigure tasks, add POU calls).
-- **Devices**: `codesys_add_device`, `codesys_device_info`, `codesys_list_device_parameters`, `codesys_set_device_parameter`, `codesys_set_device_state`, `codesys_device_reachable`, `codesys_device_rebind`, `codesys_device_user_add`, `codesys_scan_network`, `codesys_io_mappings_csv`.
-- **Build actions**: `codesys_application_build_action` (generate_code/rebuild/clean), `codesys_online_change_check`, `codesys_get_compiler_version`, `codesys_set_compiler_version_newest`, `codesys_clean_all`.
-- **Project files**: `codesys_save_project_as`, `codesys_save_project_archive`.
-- **Online lifecycle** (require `codesys_online_login`/`codesys_download_application` and a running PLC runtime): `codesys_application_state`, `codesys_application_start_stop`, `codesys_application_reset`, `codesys_boot_application_create`, `codesys_plc_file_list`, `codesys_plc_file_delete`, `codesys_plc_file_transfer`, `codesys_source_download`, `codesys_source_upload`.
-- **Symbol configuration (OPC UA)**: `codesys_symbol_config_create`, `codesys_symbol_config_list`, `codesys_symbol_config_set_access`, `codesys_symbol_config_settings_get` / `_set`, `codesys_symbol_config_export_xsd`.
-- **Network variables (NVL)**: `codesys_nvl_sender_set`, `codesys_nvl_receiver_create`.
-
-### v0.3.1 — cross-reference, refactoring and simulation (ported from [Codesys-MCP-Master](https://github.com/phobicdotno/Codesys-MCP-Master), MIT)
-
-- `codesys_find_references`: every use of an identifier in the project's textual code (POUs, methods, properties, actions, DUTs, GVLs, interfaces), with line/column and the qualifier in front of each hit (`PLC_PRG.` in `PLC_PRG.bRun`) - CODESYS's scripting API has no cross-reference call, so this reads every textual object with an ST lexer (comments, strings, pragmas and typed literals are skipped; matching is whole-identifier and case-insensitive like IEC 61131-3). Graphical bodies (FBD/LD/CFC/SFC) are reported as `not_searched_graphical`.
-- `codesys_rename_symbol`: rename an identifier project-wide AND the object of that name, rewriting the declaration header that `codesys_rename_object` leaves stale. Dry run is the default; the call refuses reserved words, time-literal suffixes, and names already used anywhere in the project, rolls back on failure, and can be limited to object paths. Always dry-run first, then build after a real rename (references from libraries are invisible to the lexer).
-- `codesys_monitor_variables`: sample variables of the running application over a time window (first/last/min/max/changes, optional raw samples); reuses the session of `codesys_online_login`.
-- `codesys_set_simulation_mode`: read or set a device's simulation mode - the application then runs in CODESYS's built-in simulator instead of on the PLC (test without hardware). Refuses when the project has unsaved changes.
-- `codesys_list_device_repository`: the device descriptions installed in the local repository, filtered by name/vendor/type.
-
-#### Known SP21 Patch 1 limitations (verified empirically)
-
-- Text writes (`codesys_set_code`, create-with-text) require the project to be the **primary** project in the ScriptEngine session. The bridge promotes/demotes automatically; the warm daemon marks the working project primary via `*` in `bridge/warm_projects.txt`.
-- **Interfaces**: create them empty (`codesys_create_interface`) and add members with `codesys_create_member`. Full-text interface declarations with METHOD/PROPERTY signatures do not parse, and `codesys_set_code` on an interface declaration (even a comment) corrupts the object ("interface definition not found" on build). Interface members are child objects; edit them individually.
-- **Batch limits**: do not put `build`/`clean_all` steps inside `codesys_batch` (`app.build()` needs the primary project and fails inside a batch) - call `codesys_build` standalone. Do not put `close_project` inside a batch either: it closes the batch's own project handle and breaks the remaining steps.
-- **Build verdicts**: trust the compiler summary line ("0 errors"), not the raw return value of `app.build()` (always None). Incremental builds can hide errors - after changing the type of a PERSISTENT variable or an interface method, run `codesys_clean_all` and rebuild. Never change the type of an existing PERSISTENT variable; add new variables instead.
-- `remove_pou` in `codesys_configure_task` is **not supported**: `pous.remove()` is a silent no-op and task objects cannot be deleted via the API. The op returns an honest error; remove POU calls in the CODESYS GUI.
-- Deleting task-tree objects (tasks, Task Configuration) is not possible via the API at all.
-- `delete_object` works for objects created in the current warm session; objects loaded from disk may refuse removal (ScriptEngine `remove()` throws NullReference).
-- `get_compiler_version` is not available (no such ScriptEngine API on SP21 Patch 1).
-- `scan_network` / `device_reachable` need a configured gateway; a missing gateway is reported as an honest result, not an exception.
-- The offline `boot_application_create` generator may fail on SP21 Patch 1 even after `generate_code` (reported as an honest error).
-
-### How the project bridge works
-
-Each project tool call writes a task file, starts `CODESYS.exe --noUI --runscript=bridge/bridge.py` (requires the CODESYS ScriptEngine, included with the IDE), executes the operation, saves and closes the project, and returns the result as JSON. Notes:
-
-- The target project must **not** be open in the CODESYS GUI at the same time (file lock).
-- Each call takes roughly 10–30 s because a headless CODESYS instance starts per call.
-- With the optional warm daemon (`bridge/bridge_daemon.cmd`) the project stays open in a background CODESYS instance and calls take ~1–3 s. The daemon is also what the MCP plugin uses when available. The launcher (`bridge/bridge_daemon.ps1`) spawns the daemon and a companion monitor window fully detached via WMI; `CB_MONITOR=0` skips the monitor, `CB_KEEP=1` does not kill existing CODESYS processes first. Machine-specific paths go into `bridge/bridge_daemon.local.ps1` (git-ignored); by default `CODESYS.exe` is resolved from `CODESYS_EXE` or a search under `C:\Program Files\CODESYS`.
-- Configure via env: `CODESYS_EXE`, `CODESYS_PROFILE`, `CODESYS_BRIDGE_DIR`, `CODESYS_BRIDGE_TIMEOUT_MS` (see `.env.example`).
-
-## What It Does
-
-- Searches curated CODESYS guidance for concepts, syntax, and workflow help.
-- Explains common CODESYS topics such as POUs, function blocks, timers, tasks, variables, libraries, debugging, and Structured Text.
-- Provides practical Structured Text and project-structure guidance.
-- Searches local PDF manuals and notes placed in `docs/pdfs/`.
-- Fetches and summarizes allowlisted official CODESYS documentation pages.
-- Crawls the official help site to build a searchable index.
-
-## Install For A Human
-
-Use this when you want to run the server yourself on your machine.
-
-Prerequisites:
-
-- Node.js 20 or newer
-- `npm`
-
-From a fresh clone:
+## Installation
 
 ```bash
+git clone https://github.com/NPavii/codesys-mcp-server.git
+cd codesys-mcp-server
 npm install
-cp .env.example .env
 npm run build
 ```
 
-For stdio, no HTTP token is needed:
+For agent-guided installation and client registration, see [`agent.md`](agent.md).
+
+## Quick start
+
+### Stdio — recommended for local agents
 
 ```bash
 npm run start:stdio
 ```
 
-For HTTP, generate a random token and place it in `.env` as `MCP_TOKEN`:
+Or register the built entry point directly:
 
 ```bash
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-npm start
+node dist/src/cli.js --stdio
 ```
 
-By default, HTTP listens on `http://127.0.0.1:3000/mcp`, requires `Authorization: Bearer <MCP_TOKEN>`, denies browser Origins and exposes only read-only CODESYS tools. See **Configuration** before enabling LAN, writes, batch or eval.
+Stdio does not require an HTTP token. It exposes the complete trusted-local toolset, including `codesys_eval`, and inherits the launching user's permissions.
 
-## Install For An LLM Or Agent
+### HTTP
 
-> **AI agent?** Read [`agent.md`](agent.md) — it contains the complete, step-by-step self-installation guide written specifically for you. Start there.
-
-Use this section when an LLM is being instructed to connect itself to the server as an MCP client.
-
-Suggested instruction to give the LLM:
-
-```text
-Read agent.md in the repository root. It contains the exact steps to install this MCP server into yourself.
-```
-
-1. Build the project first:
+Generate a token and place it in `.env`:
 
 ```bash
-npm install
-npm run build
-```
-
-2. Prefer stdio transport for local agent integration.
-3. Add the server to the client using the local build output:
-
-```bash
-claude mcp add --transport stdio codesys-docs -- node ./dist/src/cli.js --stdio
-```
-
-4. If the client needs HTTP, set `MCP_TOKEN`, run `npm start`, and register `http://localhost:3000/mcp`. Configure the client to send the header `Authorization: Bearer <MCP_TOKEN>`; registration without this header is rejected.
-
-5. If the agent can only work from a published package, use:
-
-```bash
-claude mcp add --transport stdio codesys-docs -- npx -y codesys-mcp-server --stdio
-```
-
-For Codex CLI:
-
-```bash
-codex mcp add codesys-docs -- node ./dist/src/cli.js --stdio
-```
-
-## Quick Start
-
-```bash
-npm install
 cp .env.example .env
-npm run build
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+```dotenv
+MCP_TOKEN=<generated-token>
+```
+
+Start the server:
+
+```bash
 npm start
 ```
 
-Before `npm start`, set `MCP_TOKEN` in `.env`. The server listens on `http://127.0.0.1:3000/mcp`, requires a Bearer token and is read-only for CODESYS by default. Stdio does not require this token.
-
-## Docker
-
-```bash
-docker compose up --build
-```
-
-The compose file mounts `./docs/pdfs` into the container as read-only, so you can add PDFs locally without rebuilding the image.
-
-## PDF Folder
-
-Put CODESYS manuals, vendor PDFs, project notes, datasheets, or exported documentation in:
+The default endpoint is:
 
 ```text
-docs/pdfs/
+http://127.0.0.1:3000/mcp
 ```
 
-The MCP server extracts text from `.pdf` files in that folder and makes them available through:
+Clients must send:
 
-- `search_codesys_docs` with `sourceMode: "pdf"` or `sourceMode: "all"`
-- `list_codesys_pdfs`
-- `search_codesys_pdfs`
-- `get_codesys_pdf`
+```text
+Authorization: Bearer <MCP_TOKEN>
+```
 
-PDF text extraction is best for searchable text PDFs. Scanned image-only PDFs may return little or no content unless OCR has already been applied. Extracted text may omit diagrams, screenshots, formatting, and some tables, so important engineering details should be verified against the original PDF.
+HTTP defaults to loopback only, denies browser Origins and exposes only read-only CODESYS tools. See [`SECURITY.md`](SECURITY.md) before enabling network access or write operations.
+
+## Architecture
+
+```text
+MCP client
+   │
+   ├── stdio
+   │
+   └── authenticated HTTP
+           │
+           ▼
+   Transport and tool policy
+           │
+           ▼
+      Node.js bridge
+           │
+           ├── cold CODESYS process per operation
+           │
+           └── warm daemon with a per-user task queue
+                       │
+                       ▼
+             CODESYS ScriptEngine
+                       │
+             .project / .library / PLC
+```
+
+The warm daemon keeps the ScriptEngine session open and reduces typical operation latency from tens of seconds to a few seconds. Exactly one daemon should serve one isolated bridge runtime.
+
+Multiple agents working on different projects should use separate MCP processes and isolated bridge runtimes. They must not share a daemon, queue, ping file, project file or online PLC session.
+
+## Tool catalogue
+
+| Area | Representative tools |
+|---|---|
+| Project inspection | `codesys_project_open`, `codesys_project_info`, `codesys_list_objects`, `codesys_get_object`, `codesys_dump_pou_code` |
+| Project editing | `codesys_create_pou`, `codesys_create_member`, `codesys_create_interface`, `codesys_create_dut`, `codesys_create_gvl`, `codesys_set_code` |
+| Refactoring | `codesys_find_references`, `codesys_rename_object`, `codesys_rename_symbol`, `codesys_move_object` |
+| Build and lifecycle | `codesys_build`, `codesys_application_build_action`, `codesys_clean_all`, `codesys_save_project`, `codesys_save_project_as` |
+| Libraries | `codesys_lib_install`, `codesys_lib_add`, `codesys_lib_remove`, `codesys_lib_list`, `codesys_validate_library` |
+| Tasks and devices | `codesys_list_tasks`, `codesys_configure_task`, `codesys_add_device`, `codesys_device_info`, `codesys_set_device_parameter` |
+| Data exchange | `codesys_export_plcopen_xml`, `codesys_import_plcopen_xml`, `codesys_native_export`, `codesys_native_import`, `codesys_io_mappings_csv` |
+| Online operations | `codesys_online_login`, `codesys_online_read`, `codesys_online_write`, `codesys_online_force`, `codesys_monitor_variables` |
+| PLC application | `codesys_download_application`, `codesys_application_start_stop`, `codesys_application_reset`, `codesys_boot_application_create` |
+| PLC files and source | `codesys_plc_file_list`, `codesys_plc_file_transfer`, `codesys_plc_file_delete`, `codesys_source_download`, `codesys_source_upload` |
+| Symbols and NVL | `codesys_symbol_config_create`, `codesys_symbol_config_set_access`, `codesys_nvl_sender_set`, `codesys_nvl_receiver_create` |
+| Safety and recovery | `codesys_snapshot`, `codesys_snapshot_list`, `codesys_snapshot_restore`, `codesys_online_change_check` |
+| Documentation | `search_codesys_docs`, `get_codesys_topic`, `codesys_writing_guidance`, `list_codesys_pdfs`, `search_codesys_pdfs`, `get_codesys_pdf` |
+| Official online help | `get_codesys_page`, `crawl_codesys_help` |
+
+Destructive operations that accept `confirm` require an explicit `confirm: true`. This field is an operational safeguard, not a replacement for authentication or authorization.
+
+## Recommended project workflow
+
+1. Inspect the project tree and read existing objects before editing.
+2. Keep the target project closed in the CODESYS GUI while the bridge owns it.
+3. Create a snapshot before risky changes.
+4. Use `codesys_batch` for related edits; use dry-run mode when available.
+5. Run builds as standalone operations, not inside a batch.
+6. Treat the compiler summary as the build verdict and resolve errors and warnings.
+7. Close the project or stop the warm daemon before returning to manual GUI work.
+
+## Warm daemon
+
+Start the configured launcher:
+
+```text
+bridge/bridge_daemon.cmd
+```
+
+Useful environment switches:
+
+| Variable | Purpose |
+|---|---|
+| `CB_MONITOR=0` | Do not open the companion monitor window. |
+| `CB_KEEP=1` | Do not terminate existing CODESYS processes before startup. |
+| `CB_QUEUE_DIR` | Override the per-user warm-daemon queue. Keep its ACL private. |
+| `CB_WARM_PROJECTS` | Semicolon-separated project list for warm-up. |
+| `CODESYS_BRIDGE_AUTOSTART=0` | Disable daemon auto-start from MCP. |
+
+Machine-specific paths belong in `bridge/bridge_daemon.local.ps1`, which is excluded from Git and npm packages.
 
 ## Configuration
 
 | Variable | Default | Description |
-| --- | --- | --- |
+|---|---|---|
 | `PORT` | `3000` | HTTP port. |
 | `HOST` | `127.0.0.1` | Bind host. Non-loopback requires `HTTP_ALLOWED_HOSTS`. |
 | `MCP_TOKEN` | empty | Required for HTTP; minimum 32 characters. |
 | `HTTP_ALLOWED_HOSTS` | local hosts | Comma-separated exact Host allowlist. |
 | `HTTP_ALLOWED_ORIGINS` | empty | Exact browser Origin allowlist; empty denies browser calls. |
 | `HTTP_ENABLE_WRITES` | `false` | Enables CODESYS writes and online control over HTTP. |
-| `HTTP_ENABLE_EVAL` | `false` | Independently enables arbitrary ScriptEngine eval over HTTP. |
-| `HTTP_ENABLE_BATCH` | `false` | Enables batch; nested batch and disallowed ops remain blocked. |
+| `HTTP_ENABLE_EVAL` | `false` | Independently enables ScriptEngine eval over HTTP. |
+| `HTTP_ENABLE_BATCH` | `false` | Enables batch; nested batch and disallowed operations remain blocked. |
 | `HTTP_MAX_SESSIONS` | `16` | Maximum simultaneous MCP sessions. |
 | `HTTP_SESSION_TTL_SECONDS` | `1800` | Idle session lifetime. |
 | `HTTP_RATE_LIMIT_PER_MINUTE` | `120` | Per-source HTTP request limit. |
 | `OFFICIAL_LOOKUP_ENABLED` | `true` | Enables allowlisted official CODESYS lookup. |
 | `OFFICIAL_LOOKUP_TIMEOUT_MS` | `3500` | Fetch timeout per official page. |
-| `OFFICIAL_LOOKUP_CACHE_TTL_SECONDS` | `3600` | In-memory cache TTL. |
-| `EXTERNAL_MAX_RESPONSE_BYTES` | `2000000` | Streaming cap for external responses. |
-| `PDF_SEARCH_ENABLED` | `true` | Enables local PDF extraction/search. |
+| `OFFICIAL_LOOKUP_CACHE_TTL_SECONDS` | `3600` | In-memory documentation cache TTL. |
+| `EXTERNAL_MAX_RESPONSE_BYTES` | `2000000` | Streaming limit for external responses. |
+| `PDF_SEARCH_ENABLED` | `true` | Enables local PDF extraction and search. |
 | `PDF_DOCS_DIR` | `docs/pdfs` | Folder scanned for `.pdf` files. |
 | `PDF_MAX_TEXT_CHARS` | `200000` | Maximum extracted text stored per PDF. |
 | `PDF_MAX_FILE_BYTES` | `50000000` | PDFs above this size are skipped. |
+| `CODESYS_EXE` | auto-detected | Full path to `CODESYS.exe`. |
+| `CODESYS_PROFILE` | CODESYS V3.5 SP21 Patch 1 | Profile used for headless execution. |
+| `CODESYS_BRIDGE_DIR` | `bridge/` | Bridge runtime directory. |
+| `CODESYS_BRIDGE_TIMEOUT_MS` | `240000` | Bridge operation timeout. |
 | `CODESYS_BRIDGE_MAX_QUEUE` | `32` | Maximum pending bridge calls. |
-| `CB_QUEUE_DIR` | per-user | Warm-daemon queue; keep ACL private. |
 
-Non-loopback HTTP must be placed behind HTTPS. Enabling writes does not enable batch or eval. Stdio retains the full trusted-local toolset.
+Enabling writes does not enable batch or eval. Non-loopback HTTP must be placed behind an HTTPS reverse proxy.
 
-## CLI Usage
+## Local documentation
 
-```bash
-# HTTP server (default)
-node dist/src/cli.js
-npm start
+Place PDF manuals, datasheets and project notes in:
 
-# Stdio server (for Claude Code / Codex CLI MCP integration)
-node dist/src/cli.js --stdio
-npm run start:stdio
+```text
+docs/pdfs/
 ```
 
-## Acceptance Checks
+The server extracts and indexes their text. Scanned PDFs without a text layer may require OCR. Engineering decisions should always be checked against the original document and the target runtime.
+
+## Operational notes
+
+- Text writes require the project to be primary in the ScriptEngine session; the bridge handles promotion and demotion.
+- Create interfaces empty and add members individually. Do not replace an interface declaration with `codesys_set_code`.
+- Do not place build, clean or close-project operations inside `codesys_batch`.
+- Incremental builds can hide errors after type changes; perform a clean build when required.
+- Changing types of existing persistent variables can invalidate the persistent list; prefer adding new variables.
+- Some ScriptEngine operations vary by CODESYS service pack. The bridge returns an error instead of silently claiming success.
+
+## Security
+
+Read [`SECURITY.md`](SECURITY.md) for the security model, private vulnerability reporting and release requirements.
+
+Key defaults:
+
+- local-only HTTP binding;
+- mandatory HTTP authentication;
+- no wildcard CORS;
+- exact Host and Origin validation;
+- read-only HTTP CODESYS tools;
+- independent write, batch and eval opt-ins;
+- bounded sessions, requests, queues and external responses;
+- no runtime artifacts in npm packages.
+
+## Development and verification
 
 ```bash
 npm test
 npm run build
-curl http://localhost:3000/healthz
+npm run lint
+npm audit
+npm run pack:check
 ```
+
+The test suite includes functional tests and dedicated security suites for HTTP boundaries, tool policy, resource limits, secret-bearing artifact cleanup and package contents.
+
+## License
+
+Released under the MIT License. See [`LICENSE`](LICENSE).

@@ -3725,9 +3725,9 @@ def op_nvl_receiver_create(args, state):
             "task": str(getattr(check, "TaskName", ""))}
 # ---------------------------------------------------------------------------
 # Cross-reference / refactoring / simulation tools.
-# Ported from Codesys-MCP-Master (MIT, (c) phobicdotno): the scripting API
-# has no cross-reference or refactoring call, so these read the text of every
-# textual object with a small ST lexer. Verified live on SP21 there; py2
+# The scripting API has no cross-reference or refactoring call, so these
+# operations read every textual object with a small ST lexer. The implementation
+# is compatible with the Python 2 dialect used by the ScriptEngine.
 # (IronPython 2.7) compatible here.
 # ---------------------------------------------------------------------------
 
