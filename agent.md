@@ -11,7 +11,7 @@ This file is written for **AI agents** that have been instructed to install the 
 1. **CODESYS documentation tools** — CODESYS Development System V3 guidance, Structured Text writing help, searchable local PDF documentation, and live lookup of official CODESYS pages.
 2. **Project automation bridge** (v0.3.0+) — direct work on `.project` / `.library` files through the CODESYS ScriptEngine: read/write POUs, DUTs, GVLs, interfaces, build, library management, devices, tasks, online read/write/force.
 
-Repository: `https://github.com/NPavii/codesys-mcp-server`
+Repository: `https://github.com/NPavii/codesys-mcp`
 
 ---
 
@@ -28,8 +28,8 @@ Repository: `https://github.com/NPavii/codesys-mcp-server`
 If you do not already have a local copy:
 
 ```bash
-git clone https://github.com/NPavii/codesys-mcp-server.git
-cd codesys-mcp-server
+git clone https://github.com/NPavii/codesys-mcp.git
+cd codesys-mcp
 ```
 
 ---

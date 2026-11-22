@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/NPavii/codesys-mcp-server/security/advisories/new). Do not open a public issue for an exploitable finding before a fix and coordinated disclosure date have been agreed. Include the affected commit, transport, configuration, impact and a minimal reproduction that does not target real PLC equipment.
+Report vulnerabilities privately through [GitHub private vulnerability reporting](https://github.com/NPavii/codesys-mcp/security/advisories/new). Do not open a public issue for an exploitable finding before a fix and coordinated disclosure date have been agreed. Include the affected commit, transport, configuration, impact and a minimal reproduction that does not target real PLC equipment.
 
 ## Security model
 

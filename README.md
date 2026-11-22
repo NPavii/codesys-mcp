@@ -1,4 +1,17 @@
-# CODESYS MCP Server
+<div align="center">
+
+# CODESYS MCP
+
+**CODESYS V3 automation through MCP: project editing, Structured Text refactoring, PLC operations, and searchable engineering documentation.**
+
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![CODESYS V3](https://img.shields.io/badge/CODESYS-V3-C51A2E)](https://www.codesys.com/)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+[Quick start](#quick-start) · [Capabilities](#highlights) · [Architecture](#architecture) · [Security](#security) · [Configuration](#configuration) · [Development](#development-and-verification)
+
+</div>
 
 A Model Context Protocol server for CODESYS Development System V3. It combines project and PLC automation through the CODESYS ScriptEngine with searchable, curated engineering documentation.
 
@@ -24,7 +37,7 @@ The server supports local **stdio** integration and an authenticated **Streamabl
 ## Installation
 
 ```bash
-git clone https://github.com/NPavii/codesys-mcp-server.git
+git clone https://github.com/NPavii/codesys-mcp.git
 cd codesys-mcp-server
 npm install
 npm run build
