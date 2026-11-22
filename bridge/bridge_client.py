@@ -13,7 +13,14 @@ import sys
 import time
 
 BRIDGE_DIR = os.path.dirname(os.path.abspath(__file__))
-QUEUE_DIR = os.path.join(BRIDGE_DIR, "queue")
+def _default_queue_dir():
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        return os.path.join(local, "CodeSYS-MCP", "queue")
+    return os.path.join(BRIDGE_DIR, "queue")
+
+
+QUEUE_DIR = os.environ.get("CB_QUEUE_DIR", _default_queue_dir())
 PING_FILE = os.path.join(BRIDGE_DIR, "daemon_ping.json")
 os.makedirs(QUEUE_DIR, exist_ok=True)
 
@@ -52,8 +59,11 @@ def cmd_ping(args):
 
 def cmd_stop(args):
     task_id = "stop-%d-%d" % (int(time.time() * 1000), os.getpid())
-    with open(os.path.join(QUEUE_DIR, task_id + ".json"), "w") as f:
+    qpath = os.path.join(QUEUE_DIR, task_id + ".json")
+    qtmp = qpath + ".tmp"
+    with open(qtmp, "w") as f:
         json.dump({"op": "stop", "args": {}}, f)
+    os.rename(qtmp, qpath)
     t0 = time.time()
     while time.time() - t0 < args.timeout:
         if not os.path.exists(os.path.join(QUEUE_DIR, task_id + ".json")):
@@ -83,7 +93,9 @@ def cmd_submit(args):
         return 2
     task_id = "t%d-%d" % (int(time.time() * 1000), os.getpid())
     qpath = os.path.join(QUEUE_DIR, task_id + ".json")
-    shutil.copyfile(args.task_file, qpath)
+    qtmp = qpath + ".tmp"
+    shutil.copyfile(args.task_file, qtmp)
+    os.rename(qtmp, qpath)
     rpath = os.path.join(QUEUE_DIR, task_id + ".result.json")
     t0 = time.time()
     while time.time() - t0 < args.timeout:

@@ -1,4 +1,4 @@
-import { loadConfig } from "./config.js";
+import { assertHttpConfig, loadConfig } from "./config.js";
 import { createApp } from "./server.js";
 
 async function main(): Promise<void> {
@@ -10,6 +10,7 @@ async function main(): Promise<void> {
     await startStdioServer();
   } else {
     const config = loadConfig();
+    assertHttpConfig(config);
     const app = createApp(config);
 
     const server = app.listen(config.port, config.host, () => {

@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runBridgeTaskSerial } from "./bridge.js";
+import { assertBatchStepsAllowed, isToolAllowed, type ToolPolicy } from "./policy.js";
 
 const projectPathSchema = z
   .string()
@@ -35,8 +36,12 @@ const BRIDGE_NOTE =
   "The project must NOT be open in the CODESYS GUI at the same time (file lock). " +
   "Configuration via env: CODESYS_EXE, CODESYS_PROFILE, CODESYS_BRIDGE_DIR, CODESYS_BRIDGE_TIMEOUT_MS.";
 
-async function runTask(op: string, args: Record<string, unknown>) {
+async function runTask(op: string, args: Record<string, unknown>, policy: ToolPolicy) {
+  if (op === "batch") assertBatchStepsAllowed(args.steps, policy);
   const result = await runBridgeTaskSerial({ op, args });
+  if (policy.transport === "http") {
+    console.info(JSON.stringify({ event: "bridge_task", op, ok: result.ok }));
+  }
   return asTextResult({
     ...result,
     note: result.ok ? BRIDGE_NOTE : undefined
@@ -113,8 +118,9 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
     schema: {
       project: p,
       steps: z
-        .array(z.record(z.unknown()))
+        .array(z.record(z.string(), z.unknown()))
         .min(1)
+        .max(100)
         .describe('List of {"op": ..., "args": {...}} steps.'),
       continue_on_error: z
         .boolean()
@@ -315,7 +321,8 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       project: p,
       application: appPath,
       expressions: z
-        .array(z.string().min(1))
+        .array(z.string().min(1).max(500))
+        .max(100)
         .min(1)
         .describe("e.g. ['PRG_Doser.rTarget', 'PRG_Doser.xReady']")
     }
@@ -331,7 +338,7 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
     schema: {
       project: p,
       application: appPath,
-      values: z.record(z.string()).describe('e.g. {"PRG_Doser.rTarget": "7.5"}')
+      values: z.record(z.string(), z.string()).describe('e.g. {"PRG_Doser.rTarget": "7.5"}')
     }
   },
   {
@@ -345,7 +352,7 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
     schema: {
       project: p,
       application: appPath,
-      values: z.record(z.string())
+      values: z.record(z.string(), z.string())
     }
   },
   {
@@ -358,7 +365,7 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
     schema: {
       project: p,
       application: appPath,
-      expressions: z.array(z.string().min(1)).optional()
+      expressions: z.array(z.string().min(1).max(500)).max(100).optional()
     }
   },
   // ---------- project lifecycle / multi-application ----------
@@ -494,6 +501,8 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       max_objects: z
         .number()
         .int()
+        .positive()
+        .max(2000)
         .optional()
         .describe("Safety cap on returned objects (default 2000).")
     }
@@ -1009,7 +1018,8 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       "pragmas and typed-literal values, and matches whole identifiers case-insensitively like IEC 61131-3. " +
       "Each hit carries the qualifier in front of it ('PLC_PRG.' in PLC_PRG.bRun) - use it to judge WHICH " +
       "variable is meant when several share the name. Graphical bodies (FBD/LD/CFC/SFC) are listed as " +
-      "not_searched_graphical. " + BRIDGE_NOTE,
+      "not_searched_graphical. " +
+      BRIDGE_NOTE,
     op: "find_references",
     schema: {
       project: p,
@@ -1018,6 +1028,7 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
         .number()
         .int()
         .positive()
+        .max(1000)
         .optional()
         .describe("Cap on returned references (total count is always exact). Defaults to 200.")
     }
@@ -1034,7 +1045,8 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       "the scope. On failure the already-written texts are rolled back. ALWAYS run with dry_run=true " +
       "first and inspect 'changes', then repeat with dry_run=false. After a real rename, run codesys_build " +
       "to catch references from libraries the lexer cannot see. Graphical bodies (FBD/LD/CFC/SFC) are not " +
-      "rewritten - listed as not_searched_graphical. " + BRIDGE_NOTE,
+      "rewritten - listed as not_searched_graphical. " +
+      BRIDGE_NOTE,
     op: "rename_symbol",
     schema: {
       project: p,
@@ -1043,9 +1055,12 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       dry_run: z
         .boolean()
         .optional()
-        .describe("Report what would change without writing. Defaults to true - keep it true on the first call."),
+        .describe(
+          "Report what would change without writing. Defaults to true - keep it true on the first call."
+        ),
       objects: z
-        .array(z.string().min(1))
+        .array(z.string().min(1).max(500))
+        .max(100)
         .optional()
         .describe("Object paths limiting the rename (prefix match); default the whole project.")
     }
@@ -1057,25 +1072,29 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       "Sample variables of the RUNNING application over a time window and summarise each one (first, " +
       "last, min, max, number of changes), optionally with the raw samples. Requires a prior " +
       "codesys_online_login (the cached session is reused). All expressions are read in one " +
-      "read_values call per sample; CODESYS keeps processing messages between samples. " + BRIDGE_NOTE,
+      "read_values call per sample; CODESYS keeps processing messages between samples. " +
+      BRIDGE_NOTE,
     op: "monitor_variables",
     schema: {
       project: p,
       application: appPath,
       expressions: z
-        .array(z.string().min(1))
+        .array(z.string().min(1).max(500))
+        .max(100)
         .min(1)
         .describe("e.g. ['PRG_Doser.rTarget', 'PRG_Doser.xReady']"),
       duration_ms: z
         .number()
         .int()
         .positive()
+        .max(60_000)
         .optional()
         .describe("Total window length. Defaults to 5000."),
       interval_ms: z
         .number()
         .int()
         .positive()
+        .max(60_000)
         .optional()
         .describe("Delay between samples. Defaults to 200."),
       include_samples: z
@@ -1092,11 +1111,14 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
       "simulator instead of on the PLC - test code without hardware. Log out first (the change is " +
       "offline); the project is saved after a change, and the call refuses when the project has unsaved " +
       "changes, so unrelated work is never saved along with the switch. Omit 'enable' to only report the " +
-      "current state. " + BRIDGE_NOTE,
+      "current state. " +
+      BRIDGE_NOTE,
     op: "set_simulation_mode",
     schema: {
       project: p,
-      device_path: obj.optional().describe("Device tree path; default the active application's device."),
+      device_path: obj
+        .optional()
+        .describe("Device tree path; default the active application's device."),
       enable: z
         .boolean()
         .optional()
@@ -1114,17 +1136,19 @@ const BRIDGE_TOOLS: BridgeToolSpec[] = [
     schema: {
       name_contains: z.string().optional().describe("Case-insensitive name filter."),
       vendor_contains: z.string().optional().describe("Case-insensitive vendor filter."),
-      device_type: z
+      device_type: z.number().int().optional().describe("Exact device type id; omit for any."),
+      limit: z
         .number()
         .int()
+        .positive()
         .optional()
-        .describe("Exact device type id; omit for any."),
-      limit: z.number().int().positive().optional().describe("Max rows after sorting. Defaults to 50.")
+        .describe("Max rows after sorting. Defaults to 50.")
     }
   }
 ];
-export function registerBridgeTools(server: McpServer): void {
+export function registerBridgeTools(server: McpServer, policy: ToolPolicy): void {
   for (const spec of BRIDGE_TOOLS) {
+    if (!isToolAllowed(spec.name, policy)) continue;
     server.registerTool(
       spec.name,
       {
@@ -1132,7 +1156,7 @@ export function registerBridgeTools(server: McpServer): void {
         description: spec.description,
         inputSchema: spec.schema
       },
-      async (args) => runTask(spec.op, args as Record<string, unknown>)
+      async (args) => runTask(spec.op, args as Record<string, unknown>, policy)
     );
   }
 }

@@ -121,31 +121,25 @@ async function buildPdfCache(config: AppConfig): Promise<PdfCache> {
     return pdfCache;
   }
 
-  const docs = (
-    await Promise.all(
-      stats.map(async ({ fileName, filePath, stats: fileStats }) => {
-        try {
-          const parsed = await readPdfText(filePath, config.pdfMaxTextChars);
-          const doc: PdfDocument = {
-            id: pdfIdFromFileName(fileName),
-            fileName,
-            title: titleFromFileName(fileName),
-            text: parsed.text,
-            sizeBytes: fileStats.size,
-            modifiedMs: fileStats.mtimeMs
-          };
-
-          if (parsed.pageCount !== undefined) {
-            doc.pageCount = parsed.pageCount;
-          }
-
-          return doc;
-        } catch {
-          return undefined;
-        }
-      })
-    )
-  ).filter((doc): doc is PdfDocument => Boolean(doc));
+  const docs: PdfDocument[] = [];
+  for (const { fileName, filePath, stats: fileStats } of stats) {
+    if (fileStats.size > config.pdfMaxFileBytes) continue;
+    try {
+      const parsed = await readPdfText(filePath, config.pdfMaxTextChars);
+      const doc: PdfDocument = {
+        id: pdfIdFromFileName(fileName),
+        fileName,
+        title: titleFromFileName(fileName),
+        text: parsed.text,
+        sizeBytes: fileStats.size,
+        modifiedMs: fileStats.mtimeMs
+      };
+      if (parsed.pageCount !== undefined) doc.pageCount = parsed.pageCount;
+      docs.push(doc);
+    } catch {
+      // A malformed or unreadable PDF is excluded from the index.
+    }
+  }
 
   const nextCache: PdfCache = {
     signature,

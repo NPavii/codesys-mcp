@@ -34,6 +34,36 @@ def vlog(msg):
     except Exception:
         pass
 
+def _new_error_ref():
+    return "%x-%x" % (int(time.time() * 1000), os.getpid())
+
+
+def _error_log_dir():
+    local = os.environ.get("LOCALAPPDATA", "")
+    if not local:
+        return BRIDGE_DIR
+    directory = os.path.join(local, "CodeSYS-MCP", "logs")
+    try:
+        os.makedirs(directory)
+    except OSError:
+        pass
+    return directory
+
+
+def _log_exception(ref, context):
+    try:
+        with open(os.path.join(_error_log_dir(), "bridge-errors.log"), "a") as f:
+            f.write("%.2f %s %s\n%s\n" % (time.time(), ref, context, traceback.format_exc()))
+    except Exception:
+        pass
+
+
+def _public_error(context):
+    ref = _new_error_ref()
+    _log_exception(ref, context)
+    return "CODESYS bridge operation failed (%s); see protected local bridge-errors.log" % ref
+
+
 def _safe_name(obj):
     try:
         return obj.get_name()
@@ -231,9 +261,11 @@ def op_batch(args, state):
             fn, needs_project = OPS[op]
             data = fn(sa, state) if needs_project else fn(sa)
             results.append({"step": i, "op": op, "ok": True, "data": data})
-        except Exception as e:
-            results.append({"step": i, "op": op, "ok": False, "error": str(e),
-                            "traceback": traceback.format_exc()})
+        except Exception:
+            ref = _new_error_ref()
+            _log_exception(ref, "batch step %s op %s" % (i, op))
+            results.append({"step": i, "op": op, "ok": False,
+                            "error": "Bridge step failed (%s); see protected local log" % ref})
             if not args.get("continue_on_error", True):
                 raise
     if state.get("touched") or bool(getattr(proj, "dirty", False)):
@@ -1551,7 +1583,13 @@ def op_snapshot_restore(args, state=None):
     import shutil
     if not args.get("confirm"):
         return {"error": "destructive: pass confirm=true"}
-    sdir = os.path.join(_snapshots_dir(), args["snapshot"])
+    snapshot_name = args["snapshot"]
+    if snapshot_name != os.path.basename(snapshot_name) or snapshot_name in (".", ".."):
+        return {"error": "invalid snapshot name"}
+    snapshots_root = os.path.abspath(_snapshots_dir())
+    sdir = os.path.abspath(os.path.join(snapshots_root, snapshot_name))
+    if os.path.dirname(sdir) != snapshots_root:
+        return {"error": "invalid snapshot path"}
     if not os.path.isdir(sdir):
         return {"error": "snapshot not found: " + args["snapshot"]}
     files = [f for f in os.listdir(sdir)
@@ -4365,7 +4403,7 @@ def run_task(task, state=None):
                 state["proj"] = None
         result["ok"] = True
     except Exception:
-        result["error"] = traceback.format_exc()
+        result["error"] = _public_error("task")
     return result
 
 
@@ -4376,7 +4414,7 @@ def main():
             task = json.load(f)
         result = run_task(task)
     except Exception:
-        result["error"] = traceback.format_exc()
+        result["error"] = _public_error("task file")
 
     with open(RESULT_FILE, "w") as f:
         json.dump(result, f)

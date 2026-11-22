@@ -8,6 +8,7 @@ import { crawlHelpSite, getCrawlStatus } from "../knowledge/helpSiteCrawler.js";
 import { fetchPageByUrl, isAllowedOfficialUrl } from "../knowledge/liveLookup.js";
 import { registerProjectTools } from "./projectTools.js";
 import { registerBridgeTools } from "./bridgeTools.js";
+import { makeToolPolicy, type McpTransportKind } from "./policy.js";
 
 const sourceModeSchema = z.enum(["curated", "official", "pdf", "crawled", "both", "all"]);
 
@@ -23,7 +24,11 @@ function asTextResult(value: Record<string, unknown>) {
   };
 }
 
-export function createCodesysMcpServer(config: AppConfig): McpServer {
+export function createCodesysMcpServer(
+  config: AppConfig,
+  transport: McpTransportKind = "stdio"
+): McpServer {
+  const policy = makeToolPolicy(config, transport);
   const server = new McpServer({
     name: "codesys-mcp",
     version: "0.3.0"
@@ -292,11 +297,9 @@ export function createCodesysMcpServer(config: AppConfig): McpServer {
           .number()
           .int()
           .min(1)
-          .max(2000)
+          .max(200)
           .optional()
-          .describe(
-            "Maximum pages to crawl in this call. Defaults to 300. Call again to continue."
-          ),
+          .describe("Maximum pages to crawl in this call. Defaults to 50. Call again to continue."),
         statusOnly: z
           .boolean()
           .optional()
@@ -315,7 +318,7 @@ export function createCodesysMcpServer(config: AppConfig): McpServer {
         });
       }
 
-      const progress = await crawlHelpSite(maxPages ?? 300);
+      const progress = await crawlHelpSite(maxPages ?? 50);
       return asTextResult({
         ...progress,
         note:
@@ -326,8 +329,8 @@ export function createCodesysMcpServer(config: AppConfig): McpServer {
     }
   );
 
-  registerProjectTools(server);
-  registerBridgeTools(server);
+  registerProjectTools(server, policy);
+  registerBridgeTools(server, policy);
 
   return server;
 }

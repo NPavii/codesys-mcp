@@ -44,20 +44,21 @@ npm run build
 ```
 
 The build output is written to `dist/`. The entry points are:
-- `dist/src/index.js` — HTTP server (listens on `http://0.0.0.0:3000/mcp`)
+- `dist/src/index.js` — HTTP server (listens on `http://127.0.0.1:3000/mcp`)
 - `dist/src/cli.js` — stdio server (for direct MCP client integration)
 
 ---
 
-## Step 3 — Configure Environment (Optional)
+## Step 3 — Configure Environment
 
-Copy the example env file and edit if needed:
+Stdio works without HTTP configuration. For HTTP, copy the example and set a strong random `MCP_TOKEN` (at least 32 characters):
 
 ```bash
 cp .env.example .env
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-Default values work out of the box. See the README Configuration table for all variables.
+HTTP is read-only by default. Do not enable `HTTP_ENABLE_WRITES`, `HTTP_ENABLE_BATCH` or `HTTP_ENABLE_EVAL` without a separate risk review. See the README Configuration table and `SECURITY.md`.
 
 ---
 
@@ -91,17 +92,13 @@ You can also write it directly to `.mcp.json` in your project root:
 
 ### Claude Code (HTTP transport — if stdio is not available)
 
-Start the HTTP server first:
+Set `MCP_TOKEN` first, then start the HTTP server:
 
 ```bash
-node /ABSOLUTE/PATH/TO/CodeSYS-MCP/dist/src/index.js &
+node /ABSOLUTE/PATH/TO/CodeSYS-MCP/dist/src/index.js
 ```
 
-Then register:
-
-```bash
-claude mcp add --transport http codesys-docs http://localhost:3000/mcp
-```
+Register `http://localhost:3000/mcp` in the MCP client and configure its `Authorization: Bearer <MCP_TOKEN>` header. Do not use an HTTP registration method that cannot send this header.
 
 ### Codex CLI
 

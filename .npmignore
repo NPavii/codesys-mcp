@@ -1,0 +1,22 @@
+# Runtime and machine-local data must never be published.
+bridge/queue/
+bridge/snapshots/
+bridge/__pycache__/
+bridge/tests/
+bridge/*.log
+bridge/*.pyc
+bridge/daemon_ping.json
+bridge/task*.json
+bridge/result*.json
+bridge/bridge.cmd
+bridge/bridge-*.cmd
+bridge/bridge_daemon_run.cmd
+bridge/bridge_daemon.local.ps1
+bridge/warm_projects.txt
+bridge/_*.json
+bridge/_*.py
+bridge/prep_*.py
+bridge/img*.png
+.env
+.env.*
+!.env.example

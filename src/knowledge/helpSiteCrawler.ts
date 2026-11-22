@@ -4,6 +4,7 @@ import * as cheerio from "cheerio";
 import MiniSearch from "minisearch";
 import type { SearchResult } from "./types.js";
 import { createSnippet } from "./search.js";
+import { readTextLimited } from "./httpLimits.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -94,6 +95,7 @@ async function fetchPage(url: string): Promise<{
   try {
     const response = await fetch(url, {
       signal: AbortSignal.timeout(8000),
+      redirect: "error",
       headers: {
         "user-agent":
           "codesys-mcp-server/0.1 (documentation indexer; +https://modelcontextprotocol.io)"
@@ -102,7 +104,7 @@ async function fetchPage(url: string): Promise<{
 
     if (!response.ok) return null;
 
-    const html = await response.text();
+    const html = await readTextLimited(response, 2_000_000);
     const $ = cheerio.load(html);
 
     // Collect links before stripping elements

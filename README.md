@@ -95,19 +95,20 @@ cp .env.example .env
 npm run build
 ```
 
-Start the HTTP server:
-
-```bash
-npm start
-```
-
-Or start the stdio server:
+For stdio, no HTTP token is needed:
 
 ```bash
 npm run start:stdio
 ```
 
-By default, the HTTP server listens on `http://0.0.0.0:3000/mcp`.
+For HTTP, generate a random token and place it in `.env` as `MCP_TOKEN`:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+npm start
+```
+
+By default, HTTP listens on `http://127.0.0.1:3000/mcp`, requires `Authorization: Bearer <MCP_TOKEN>`, denies browser Origins and exposes only read-only CODESYS tools. See **Configuration** before enabling LAN, writes, batch or eval.
 
 ## Install For An LLM Or Agent
 
@@ -135,15 +136,7 @@ npm run build
 claude mcp add --transport stdio codesys-docs -- node ./dist/src/cli.js --stdio
 ```
 
-4. If the client needs HTTP instead, start the server and register the endpoint:
-
-```bash
-npm start
-```
-
-```bash
-claude mcp add --transport http codesys-docs http://localhost:3000/mcp
-```
+4. If the client needs HTTP, set `MCP_TOKEN`, run `npm start`, and register `http://localhost:3000/mcp`. Configure the client to send the header `Authorization: Bearer <MCP_TOKEN>`; registration without this header is rejected.
 
 5. If the agent can only work from a published package, use:
 
@@ -166,7 +159,7 @@ npm run build
 npm start
 ```
 
-The server listens on `http://0.0.0.0:3000/mcp` by default.
+Before `npm start`, set `MCP_TOKEN` in `.env`. The server listens on `http://127.0.0.1:3000/mcp`, requires a Bearer token and is read-only for CODESYS by default. Stdio does not require this token.
 
 ## Docker
 
@@ -198,13 +191,28 @@ PDF text extraction is best for searchable text PDFs. Scanned image-only PDFs ma
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP port. |
-| `HOST` | `0.0.0.0` | Bind host. |
-| `OFFICIAL_LOOKUP_ENABLED` | `true` | Enables live official CODESYS page lookup. |
+| `HOST` | `127.0.0.1` | Bind host. Non-loopback requires `HTTP_ALLOWED_HOSTS`. |
+| `MCP_TOKEN` | empty | Required for HTTP; minimum 32 characters. |
+| `HTTP_ALLOWED_HOSTS` | local hosts | Comma-separated exact Host allowlist. |
+| `HTTP_ALLOWED_ORIGINS` | empty | Exact browser Origin allowlist; empty denies browser calls. |
+| `HTTP_ENABLE_WRITES` | `false` | Enables CODESYS writes and online control over HTTP. |
+| `HTTP_ENABLE_EVAL` | `false` | Independently enables arbitrary ScriptEngine eval over HTTP. |
+| `HTTP_ENABLE_BATCH` | `false` | Enables batch; nested batch and disallowed ops remain blocked. |
+| `HTTP_MAX_SESSIONS` | `16` | Maximum simultaneous MCP sessions. |
+| `HTTP_SESSION_TTL_SECONDS` | `1800` | Idle session lifetime. |
+| `HTTP_RATE_LIMIT_PER_MINUTE` | `120` | Per-source HTTP request limit. |
+| `OFFICIAL_LOOKUP_ENABLED` | `true` | Enables allowlisted official CODESYS lookup. |
 | `OFFICIAL_LOOKUP_TIMEOUT_MS` | `3500` | Fetch timeout per official page. |
-| `OFFICIAL_LOOKUP_CACHE_TTL_SECONDS` | `3600` | In-memory cache TTL for official pages. |
-| `PDF_SEARCH_ENABLED` | `true` | Enables text extraction/search for local PDFs. |
+| `OFFICIAL_LOOKUP_CACHE_TTL_SECONDS` | `3600` | In-memory cache TTL. |
+| `EXTERNAL_MAX_RESPONSE_BYTES` | `2000000` | Streaming cap for external responses. |
+| `PDF_SEARCH_ENABLED` | `true` | Enables local PDF extraction/search. |
 | `PDF_DOCS_DIR` | `docs/pdfs` | Folder scanned for `.pdf` files. |
 | `PDF_MAX_TEXT_CHARS` | `200000` | Maximum extracted text stored per PDF. |
+| `PDF_MAX_FILE_BYTES` | `50000000` | PDFs above this size are skipped. |
+| `CODESYS_BRIDGE_MAX_QUEUE` | `32` | Maximum pending bridge calls. |
+| `CB_QUEUE_DIR` | per-user | Warm-daemon queue; keep ACL private. |
+
+Non-loopback HTTP must be placed behind HTTPS. Enabling writes does not enable batch or eval. Stdio retains the full trusted-local toolset.
 
 ## CLI Usage
 

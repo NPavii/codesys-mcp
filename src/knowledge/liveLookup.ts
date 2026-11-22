@@ -3,6 +3,7 @@ import { officialSources, type OfficialSource } from "./sources.js";
 import type { AppConfig } from "../config.js";
 import type { SearchResult } from "./types.js";
 import { createSnippet } from "./search.js";
+import { readTextLimited } from "./httpLimits.js";
 
 const allowedOfficialHosts = new Set([
   "content.helpme-codesys.com",
@@ -20,11 +21,26 @@ interface CachedPage {
 }
 
 const pageCache = new Map<string, CachedPage>();
+const MAX_PAGE_CACHE_ENTRIES = 256;
+
+function cachePage(key: string, page: CachedPage): void {
+  if (pageCache.size >= MAX_PAGE_CACHE_ENTRIES) {
+    const oldest = pageCache.keys().next().value;
+    if (oldest) pageCache.delete(oldest);
+  }
+  pageCache.set(key, page);
+}
 
 export function isAllowedOfficialUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl);
-    return url.protocol === "https:" && allowedOfficialHosts.has(url.hostname);
+    return (
+      url.protocol === "https:" &&
+      allowedOfficialHosts.has(url.hostname) &&
+      (url.port === "" || url.port === "443") &&
+      url.username === "" &&
+      url.password === ""
+    );
   } catch {
     return false;
   }
@@ -92,6 +108,7 @@ async function fetchOfficialPage(
   try {
     const response = await fetch(source.url, {
       signal: controller.signal,
+      redirect: "error",
       headers: {
         "user-agent": "codesys-mcp-server/0.1 (+https://modelcontextprotocol.io)"
       }
@@ -101,7 +118,7 @@ async function fetchOfficialPage(
       return cached;
     }
 
-    const html = await response.text();
+    const html = await readTextLimited(response, config.externalMaxResponseBytes);
     const $ = cheerio.load(html);
     $("script, style, nav, footer, header, noscript, svg, img").remove();
 
@@ -113,7 +130,7 @@ async function fetchOfficialPage(
       text,
       expiresAt: Date.now() + config.officialLookupCacheTtlMs
     };
-    pageCache.set(source.url, page);
+    cachePage(source.url, page);
     return page;
   } catch {
     return cached;
@@ -147,12 +164,13 @@ export async function fetchPageByUrl(
   try {
     const response = await fetch(rawUrl, {
       signal: controller.signal,
+      redirect: "error",
       headers: { "user-agent": "codesys-mcp-server/0.1 (+https://modelcontextprotocol.io)" }
     });
 
     if (!response.ok) return null;
 
-    const html = await response.text();
+    const html = await readTextLimited(response, config.externalMaxResponseBytes);
     const $ = cheerio.load(html);
     $("script, style, nav, footer, header, noscript, svg, img").remove();
 
@@ -160,7 +178,7 @@ export async function fetchPageByUrl(
     const text = $("main, article, body").text().replace(/\s+/g, " ").trim().slice(0, 60000);
 
     const page = { title, text, expiresAt: Date.now() + config.officialLookupCacheTtlMs };
-    pageCache.set(rawUrl, page);
+    cachePage(rawUrl, page);
     return { title, text, url: rawUrl };
   } catch {
     return null;

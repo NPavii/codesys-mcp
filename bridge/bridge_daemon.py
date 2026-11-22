@@ -15,7 +15,14 @@ import time
 import traceback
 
 BRIDGE_DIR = os.path.dirname(os.path.abspath(__file__))
-QUEUE_DIR = os.path.join(BRIDGE_DIR, "queue")
+def _default_queue_dir():
+    local = os.environ.get("LOCALAPPDATA", "")
+    if local:
+        return os.path.join(local, "CodeSYS-MCP", "queue")
+    return os.path.join(BRIDGE_DIR, "queue")
+
+
+QUEUE_DIR = os.environ.get("CB_QUEUE_DIR", _default_queue_dir())
 PING_FILE = os.path.join(BRIDGE_DIR, "daemon_ping.json")
 STOP_FILE = os.path.join(BRIDGE_DIR, "daemon_stop.flag")
 BOOT_LOG = os.path.join(BRIDGE_DIR, "daemon_boot.log")
@@ -256,15 +263,15 @@ while True:
             tasks_done += 1
             last_task_ts = time.time()
             res_path = path[:-5] + ".result.json"
+            res_tmp = res_path + ".tmp-%s" % os.getpid()
             try:
-                with open(res_path, "w") as f:
+                with open(res_tmp, "w") as f:
                     json.dump(json_safe(result), f)
             except Exception:
-                # the encoder still choked: fall back to a scrubbed payload
-                # rather than spinning on the same task forever
                 result["_nuclear_fallback"] = True
-                with open(res_path, "w") as f:
+                with open(res_tmp, "w") as f:
                     json.dump(nuclear_safe(result), f)
+            os.rename(res_tmp, res_path)
             try:
                 os.remove(path)
             except Exception:
